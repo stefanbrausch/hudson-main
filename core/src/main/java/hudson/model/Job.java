@@ -1069,6 +1069,8 @@ public abstract class Job<JobT extends Job<JobT, RunT>, RunT extends Run<JobT, R
                 Hudson.checkGoodName(newName);
                 rsp.sendRedirect("rename?newName=" + URLEncoder.encode(newName, "UTF-8"));
             } else {
+                for (ItemListener l : Hudson.getInstance().getJobListeners())
+                    l.onChanged(this);
                 rsp.sendRedirect(".");
             }
         } catch (JSONException e) {
@@ -1122,6 +1124,8 @@ public abstract class Job<JobT extends Job<JobT, RunT>, RunT extends Run<JobT, R
 
             // if everything went well, commit this new version
             out.commit();
+            for (ItemListener l : Hudson.getInstance().getJobListeners())
+                l.onChanged(this);
             return;
         }
 

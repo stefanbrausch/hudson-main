@@ -116,4 +116,9 @@ public class ItemListener implements ExtensionPoint {
         for (ItemListener l : all())
             l.onCreated(item);
     }
+    /**
+     * Called after a job configuriation is changed.
+     */
+    public void onChanged(Item item) {
+    }
 }

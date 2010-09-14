@@ -29,6 +29,7 @@ import hudson.Util;
 import hudson.Launcher.RemoteLauncher;
 import hudson.diagnosis.OldDataMonitor;
 import hudson.model.Descriptor.FormException;
+import hudson.model.listeners.ComputerConfigListener;
 import hudson.remoting.Callable;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.CommandLauncher;

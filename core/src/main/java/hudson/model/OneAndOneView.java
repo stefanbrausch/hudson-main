@@ -1,27 +1,3 @@
-/*
- * The MIT License
- * 
- * Copyright (c) 2004-2010, Sun Microsystems, Inc., Kohsuke Kawaguchi,
- * Erik Ramfelt, Seiji Sogabe, Martin Eigenbrodt, Alan Harder
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- * 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
 package hudson.model;
 
 import hudson.DescriptorExtensionList;
@@ -35,13 +11,16 @@ import hudson.views.LastSuccessColumn;
 import hudson.views.ListViewColumn;
 import hudson.views.ListViewColumnDescriptor;
 import hudson.views.StatusColumn;
-import hudson.views.ViewJobFilter;
 import hudson.views.WeatherColumn;
+import hudson.views.StatusColumn.DescriptorImpl;
 import hudson.model.Descriptor.FormException;
+import hudson.tasks.test.AbstractTestResultAction;
+import hudson.triggers.Messages;
+import hudson.triggers.SCMTrigger.SCMTriggerCause;
 import hudson.util.CaseInsensitiveComparator;
 import hudson.util.DescribableList;
 import hudson.util.FormValidation;
-
+import hudson.model.Cause.UserCause;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -49,30 +28,31 @@ import org.kohsuke.stapler.QueryParameter;
 
 import javax.servlet.ServletException;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.TreeSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import javax.servlet.ServletException;
+
 /**
  * Displays {@link Job}s in a flat list view.
- *
+ * 
  * @author Kohsuke Kawaguchi
  */
-public class ListView extends View implements Saveable {
-
+public class OneAndOneView extends View implements Saveable {
     /**
      * List of job names. This is what gets serialized.
      */
-    /*package*/ final SortedSet<String> jobNames = new TreeSet<String>(CaseInsensitiveComparator.INSTANCE);
-    
-    private DescribableList<ViewJobFilter, Descriptor<ViewJobFilter>> jobFilters;
+    /* package */final SortedSet<String> jobNames = new TreeSet<String>(
+            CaseInsensitiveComparator.INSTANCE);
 
     private DescribableList<ListViewColumn, Descriptor<ListViewColumn>> columns;
 
@@ -80,26 +60,88 @@ public class ListView extends View implements Saveable {
      * Include regex string.
      */
     private String includeRegex;
-    
+
     /**
      * Compiled include pattern from the includeRegex string.
      */
     private transient Pattern includePattern;
 
-    /**
-     * Filter by enabled/disabled status of jobs.
-     * Null for no filter, true for enabled-only, false for disabled-only.
-     */
-    private Boolean statusFilter;
+    private String showType;
 
-    @DataBoundConstructor
-    public ListView(String name) {
-        super(name);
-        initColumns();
-        initJobFilters();
+    public String getShowType() {
+        return showType;
     }
 
-    public ListView(String name, ViewGroup owner) {
+    private static final String TYPEALL = "ALL";
+    private static final String TYPESUCCESS = "Successes";
+    private static final String TYPEFAILURE = "Failures";
+    private static final String TYPEUNSTABLE = "Unstables";
+    private static final String TYPEDISABLED = "Disabled";
+    private static final String TYPETESTERRORS = "TestErrors";
+
+    public String getTYPEALL() {
+        return TYPEALL;
+    }
+
+    public String getTYPESUCCESS() {
+        return TYPESUCCESS;
+    }
+
+    public String getTYPEFAILURE() {
+        return TYPEFAILURE;
+    }
+
+    public String getTYPEUNSTABLE() {
+        return TYPEUNSTABLE;
+    }
+
+    public String getTYPEDISABLED() {
+        return TYPEDISABLED;
+    }
+
+    public String getTYPETESTERRORS() {
+        return TYPETESTERRORS;
+    }
+
+    private String viewType;
+
+    public String getViewType() {
+        return viewType;
+    }
+
+    public static final String VIEWTYPEGLOBAL = "Global";
+    public static final String VIEWTYPEADMIN = "Admin";
+    public static final String VIEWTYPEUSER = "User";
+
+    public String getVIEWTYPEGLOBAL() {
+        return VIEWTYPEGLOBAL;
+    }
+
+    public String getVIEWTYPEADMIN() {
+        return VIEWTYPEADMIN;
+    }
+
+    public String getVIEWTYPEUSER() {
+        return VIEWTYPEUSER;
+    }
+
+    private String viewUserName;
+
+    public String getViewUserName() {
+        if (viewUserName == null)
+            viewUserName = "";
+        return viewUserName;
+    }
+
+    @DataBoundConstructor
+    public OneAndOneView(String name) {
+
+        super(name);
+        initColumns();
+
+    }
+    
+    public OneAndOneView(String name, ViewGroup owner) {
         this(name);
         this.owner = owner;
     }
@@ -110,12 +152,11 @@ public class ListView extends View implements Saveable {
         if (owner!=null)
             owner.save();
     }
-
+    
     private Object readResolve() {
-        if(includeRegex!=null)
+        if (includeRegex != null)
             includePattern = Pattern.compile(includeRegex);
         initColumns();
-        initJobFilters();
         return this;
     }
 
@@ -158,43 +199,27 @@ public class ListView extends View implements Saveable {
 
         columns = new DescribableList<ListViewColumn, Descriptor<ListViewColumn>>(this,r);
     }
-    protected void initJobFilters() {
-        if (jobFilters != null) {
-            return;
-        }
-        ArrayList<ViewJobFilter> r = new ArrayList<ViewJobFilter>();
-        jobFilters = new DescribableList<ViewJobFilter, Descriptor<ViewJobFilter>>(this,r);
-    }
+
 
     /**
      * Returns the transient {@link Action}s associated with the top page.
-     *
+     * 
      * @see Hudson#getActions()
      */
-    @Override
     public List<Action> getActions() {
         return Hudson.getInstance().getActions();
     }
-    
-    /**
-     * Used to determine if we want to display the Add button.
-     */
-    public boolean hasJobFilterExtensions() {
-    	return !ViewJobFilter.all().isEmpty();
-    }
-    public Iterable<ViewJobFilter> getJobFilters() {
-    	return jobFilters;
-    }
+
     public Iterable<ListViewColumn> getColumns() {
         return columns;
     }
-    
+
     /**
      * Returns a read-only view of all {@link Job}s in this view.
-     *
+     * 
      * <p>
-     * This method returns a separate copy each time to avoid
-     * concurrent modification issue.
+     * This method returns a separate copy each time to avoid concurrent
+     * modification issue.
      */
     public synchronized List<TopLevelItem> getItems() {
         SortedSet<String> names = new TreeSet<String>(jobNames);
@@ -207,23 +232,54 @@ public class ListView extends View implements Saveable {
                 }
             }
         }
+        for (Iterator<String> iterator = names.iterator(); iterator.hasNext();) {
+            String name = iterator.next();
+            Result result = Result.NOT_BUILT;
+            AbstractTestResultAction testResultAction = null;
+            if (Hudson.getInstance().getItem(name) instanceof AbstractProject){
+                if (((AbstractProject<?, ?>) Hudson.getInstance().getItem(name))
+                        .getLastBuild() != null) {
+                    testResultAction = ((AbstractProject<?, ?>) Hudson
+                            .getInstance().getItem(name)).getLastBuild()
+                            .getTestResultAction(); 
+                    result = ((AbstractProject<?, ?>) Hudson.getInstance().getItem(
+                            name)).getLastBuild().getResult();
+                }
+                boolean isDisabled = ((AbstractProject<?, ?>) Hudson.getInstance()
+                        .getItem(name)).isDisabled();
 
-        List<TopLevelItem> items = new ArrayList<TopLevelItem>(names.size());
-        for (String n : names) {
-            TopLevelItem item = Hudson.getInstance().getItem(n);
-            // Add if no status filter or filter matches enabled/disabled status:
-            if(item!=null && (statusFilter == null || !(item instanceof AbstractProject)
-                              || ((AbstractProject)item).isDisabled() ^ statusFilter))
-                items.add(item);
+                int failedTestCount = 0;
+                if (testResultAction != null)
+                    failedTestCount = testResultAction.getFailCount();
+                if (showType != null) {
+                    if ((showType.equals(TYPEFAILURE))
+                            && ((result != Result.FAILURE) || isDisabled)) {
+                        iterator.remove();
+                    } else if ((showType.equals(TYPESUCCESS))
+                            && ((result != Result.SUCCESS) || isDisabled)) {
+                        iterator.remove();
+                    } else if ((showType.equals(TYPEUNSTABLE))
+                            && ((result != Result.UNSTABLE) || isDisabled)) {
+                        iterator.remove();
+                    } else if ((showType.equals(TYPEDISABLED)) && (!isDisabled)) {
+                        iterator.remove();
+                    } else if ((showType.equals(TYPETESTERRORS))
+                            && (failedTestCount == 0)) {
+                        iterator.remove();
+                    }
+                }
+            }
+            else{
+               iterator.remove();
+            }
         }
 
-        // check the filters
-        Iterable<ViewJobFilter> jobFilters = getJobFilters();
-        List<TopLevelItem> allItems = Hudson.getInstance().getItems();
-    	for (ViewJobFilter jobFilter: jobFilters) {
-    		items = jobFilter.filter(items, allItems, this);
-    	}
-        
+        List<TopLevelItem> items = new ArrayList<TopLevelItem>(names.size());
+        for (String name : names) {
+            TopLevelItem item = Hudson.getInstance().getItem(name);
+            if (item != null)
+                items.add(item);
+        }
         return items;
     }
 
@@ -235,17 +291,10 @@ public class ListView extends View implements Saveable {
         return includeRegex;
     }
 
-    /**
-     * Filter by enabled/disabled status of jobs.
-     * Null for no filter, true for enabled-only, false for disabled-only.
-     */
-    public Boolean getStatusFilter() {
-        return statusFilter;
-    }
-
-    public Item doCreateItem(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException {
+    public Item doCreateItem(StaplerRequest req, StaplerResponse rsp)
+            throws IOException, ServletException {
         Item item = Hudson.getInstance().doCreateItem(req, rsp);
-        if(item!=null) {
+        if (item != null) {
             jobNames.add(item.getName());
             owner.save();
         }
@@ -253,59 +302,84 @@ public class ListView extends View implements Saveable {
     }
 
     @Override
-    public synchronized void onJobRenamed(Item item, String oldName, String newName) {
-        if(jobNames.remove(oldName) && newName!=null)
+    public synchronized void onJobRenamed(Item item, String oldName,
+            String newName) {
+        if (jobNames.remove(oldName) && newName != null)
             jobNames.add(newName);
     }
 
     /**
+     * Build all jobs of this view.
+     * 
+     * @throws ServletException
+     */
+    public synchronized void doBuild(StaplerRequest req, StaplerResponse rsp)
+            throws IOException, ServletException {
+
+        for (TopLevelItem item : this.getItems()) {
+
+            ((AbstractProject<?, ?>) item).scheduleBuild(new UserCause());
+        }
+        rsp.sendRedirect(".");
+    }
+
+    /**
      * Handles the configuration submission.
-     *
+     * 
      * Load view-specific properties here.
      */
     @Override
-    protected void submit(StaplerRequest req) throws ServletException, FormException, IOException {
+    protected void submit(StaplerRequest req) throws ServletException,
+            FormException {
         jobNames.clear();
         for (TopLevelItem item : Hudson.getInstance().getItems()) {
-            if(req.getParameter(item.getName())!=null)
+            if (req.getParameter(item.getName()) != null)
                 jobNames.add(item.getName());
         }
 
+        if (req.getParameter("showType") != null)
+            showType = req.getParameter("showType");
+        else
+            showType = TYPEALL;
+
+        if (req.getParameter("viewType") != null)
+            viewType = req.getParameter("viewType");
+        else
+            viewType = VIEWTYPEGLOBAL;
+
+        if (req.getParameter("viewUserName") != null)
+            viewUserName = req.getParameter("viewUserName");
+        else
+            viewUserName = "";
+
         if (req.getParameter("useincluderegex") != null) {
             includeRegex = Util.nullify(req.getParameter("includeRegex"));
-            if (includeRegex == null)
-                includePattern = null;
-            else
-                includePattern = Pattern.compile(includeRegex);
+            includePattern = Pattern.compile(includeRegex);
         } else {
             includeRegex = null;
             includePattern = null;
         }
-
         if (columns == null) {
-            columns = new DescribableList<ListViewColumn,Descriptor<ListViewColumn>>(Saveable.NOOP);
+            columns = new DescribableList<ListViewColumn, Descriptor<ListViewColumn>>(
+                    Saveable.NOOP);
         }
-        columns.rebuildHetero(req, req.getSubmittedForm(), ListViewColumn.all(), "columns");
-        
-        if (jobFilters == null) {
-        	jobFilters = new DescribableList<ViewJobFilter,Descriptor<ViewJobFilter>>(Saveable.NOOP);
-        }
-        jobFilters.rebuildHetero(req, req.getSubmittedForm(), ViewJobFilter.all(), "jobFilters");
+        columns.rebuildHetero(req, req.getSubmittedForm(), Hudson.getInstance()
+                .getDescriptorList(ListViewColumn.class), "columns");
 
-        String filter = Util.fixEmpty(req.getParameter("statusFilter"));
-        statusFilter = filter != null ? "1".equals(filter) : null;
     }
 
     @Extension
     public static final class DescriptorImpl extends ViewDescriptor {
+
         public String getDisplayName() {
-            return Messages.ListView_DisplayName();
+            return "1&1 View";
         }
 
         /**
          * Checks if the include regular expression is valid.
          */
-        public FormValidation doCheckIncludeRegex( @QueryParameter String value ) throws IOException, ServletException, InterruptedException  {
+        public FormValidation doCheckIncludeRegex(@QueryParameter String value)
+                throws IOException, ServletException, InterruptedException {
             String v = Util.fixEmpty(value);
             if (v != null) {
                 try {
@@ -317,7 +391,7 @@ public class ListView extends View implements Saveable {
             return FormValidation.ok();
         }
     }
-
+    
     public static List<ListViewColumn> getDefaultColumns() {
         ArrayList<ListViewColumn> r = new ArrayList<ListViewColumn>();
         DescriptorExtensionList<ListViewColumn, Descriptor<ListViewColumn>> all = ListViewColumn.all();
@@ -332,6 +406,30 @@ public class ListView extends View implements Saveable {
             }
         }
         return Collections.unmodifiableList(r);
+    }
+    public static class ViewCause extends Cause {
+        @Override
+        public String getShortDescription() {
+        	 if (Hudson.getAuthentication().getName() != null) {
+                 return Hudson.getAuthentication().getName()
+                         + " triggered this build via complete view build of ";
+                         //+ "View"
+                 } else {
+                 return "Unknown triggered this build via complete view build of ";
+                         //+ getDisplayName();
+             }
+           
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof ViewCause;
+        }
+
+        @Override
+        public int hashCode() {
+            return 7;
+        }
     }
 
 

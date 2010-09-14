@@ -218,5 +218,6 @@ public abstract class AbstractNodeMonitorDescriptor<T> extends Descriptor<NodeMo
 
     private final Logger LOGGER = Logger.getLogger(getClass().getName());
 
-    private static final long HOUR = 1000*60*60L;
+    protected static final long HOUR = 1000*60*60L;
+    protected static final long MINUTES = 1000*60L;
 }

@@ -73,6 +73,10 @@ throws ANTLRException
       {
         table.set("0 * * * *");
       }
+      | "workdaily"
+      {
+        table.set("0 0 * * 1-5");
+      }
     )
   )
   ;
@@ -151,3 +155,4 @@ WEEKLY: "weekly";
 DAILY: "daily";
 MIDNIGHT: "midnight";
 HOURLY: "hourly";
+WORKDAILY: "workdaily";

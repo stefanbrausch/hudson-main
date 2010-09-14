@@ -329,7 +329,7 @@ public class OneAndOneView extends View implements Saveable {
      * Load view-specific properties here.
      */
     @Override
-    protected void submit(StaplerRequest req) throws ServletException,
+    protected void submit(StaplerRequest req) throws IOException, ServletException,
             FormException {
         jobNames.clear();
         for (TopLevelItem item : Hudson.getInstance().getItems()) {

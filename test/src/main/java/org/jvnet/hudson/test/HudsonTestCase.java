@@ -391,7 +391,7 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
      * Returns the older default Maven, while still allowing specification of other bundled Mavens.
      */
     protected MavenInstallation configureDefaultMaven() throws Exception {
-	return configureDefaultMaven("maven-2.0.7", MavenInstallation.MAVEN_20);
+	return configureDefaultMaven("apache-maven-2.2.1", MavenInstallation.MAVEN_20);
     }
     
     /**
@@ -1015,6 +1015,10 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
      * via {@link DataBoundConstructor}
      */
     public void assertEqualDataBoundBeans(Object lhs, Object rhs) throws Exception {
+        if (lhs==null && rhs==null)     return;
+        if (lhs==null)      fail("lhs is null while rhs="+rhs);
+        if (rhs==null)      fail("rhs is null while lhs="+rhs);
+        
         Constructor<?> lc = findDataBoundConstructor(lhs.getClass());
         Constructor<?> rc = findDataBoundConstructor(rhs.getClass());
         assertEquals("Data bound constructor mismatch. Different type?",lc,rc);

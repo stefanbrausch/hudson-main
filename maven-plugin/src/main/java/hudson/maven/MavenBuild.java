@@ -433,7 +433,7 @@ public class MavenBuild extends AbstractMavenBuild<MavenModule,MavenBuild> {
             if(result==null)
                 setResult(Result.SUCCESS);
             onEndBuilding();
-            duration = System.currentTimeMillis()- startTime;
+            duration += System.currentTimeMillis()- startTime;
             parentBuild.notifyModuleBuild(MavenBuild.this);
             try {
                 listener.setSideOutputStream(null);
@@ -555,7 +555,6 @@ public class MavenBuild extends AbstractMavenBuild<MavenModule,MavenBuild> {
                         failed=true;
                     }                    
                 }
-                buildEnvironments = null;
                 // WARNING The return in the finally clause will trump any return before
                 if (failed) return Result.FAILURE;
             }
@@ -569,6 +568,7 @@ public class MavenBuild extends AbstractMavenBuild<MavenModule,MavenBuild> {
         @Override
         public void cleanUp(BuildListener listener) throws Exception {
             scheduleDownstreamBuilds(listener);
+            buildEnvironments = null;
         }
     }
 

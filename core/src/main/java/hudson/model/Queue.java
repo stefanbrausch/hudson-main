@@ -36,6 +36,7 @@ import static hudson.util.Iterators.reverse;
 import hudson.cli.declarative.CLIMethod;
 import hudson.cli.declarative.CLIResolver;
 import hudson.model.queue.AbstractQueueTask;
+import hudson.model.queue.Executables;
 import hudson.model.queue.SubTask;
 import hudson.model.queue.FutureImpl;
 import hudson.model.queue.MappingWorksheet;
@@ -163,7 +164,7 @@ public class Queue extends ResourceController implements Saveable {
      * a new {@link JobOffer} and gets itself {@linkplain Queue#parked parked},
      * and we'll eventually hand out an {@link #workUnit} to build.
      */
-    public class JobOffer {
+    public class JobOffer extends MappingWorksheet.ExecutorSlot {
         public final Executor executor;
 
         /**
@@ -182,10 +183,16 @@ public class Queue extends ResourceController implements Saveable {
             this.executor = executor;
         }
 
-        public void set(WorkUnit p) {
+        @Override
+        protected void set(WorkUnit p) {
             assert this.workUnit == null;
             this.workUnit = p;
             event.signal();
+        }
+
+        @Override
+        public Executor getExecutor() {
+            return executor;
         }
 
         /**
@@ -750,7 +757,8 @@ public class Queue extends ResourceController implements Saveable {
                         if(j.canTake(p.task))
                             candidates.add(j);
 
-                    Mapping m = loadBalancer.map(p.task, new MappingWorksheet(p.task, candidates));
+                    MappingWorksheet ws = new MappingWorksheet(p, candidates);
+                    Mapping m = loadBalancer.map(p.task, ws);
                     if (m == null)
                         // if we couldn't find the executor that fits,
                         // just leave it in the buildables list and
@@ -758,10 +766,12 @@ public class Queue extends ResourceController implements Saveable {
                         continue;
 
                     // found a matching executor. use it.
-                    m.execute(new WorkUnitContext(p));
+                    WorkUnitContext wuc = new WorkUnitContext(p);
+                    m.execute(wuc);
 
                     itr.remove();
-                    pendings.add(p);
+                    if (!wuc.getWorkUnits().isEmpty())
+                        pendings.add(p);
                 }
 
                 // we went over all the buildable projects and awaken
@@ -864,6 +874,7 @@ public class Queue extends ResourceController implements Saveable {
         if (LOGGER.isLoggable(Level.FINE))
             LOGGER.fine("Queue maintenance started " + this);
 
+        // blocked -> buildable
         Iterator<BlockedItem> itr = blockedProjects.values().iterator();
         while (itr.hasNext()) {
             BlockedItem p = itr.next();
@@ -1087,6 +1098,11 @@ public class Queue extends ResourceController implements Saveable {
         /**
          * Task from which this executable was created.
          * Never null.
+         *
+         * <p>
+         * Since this method went through a signature change in 1.FATTASK, the invocation may results in
+         * {@link AbstractMethodError}.
+         * Use {@link Executables#getParentOf(Executable)} that avoids this.
          */
         SubTask getParent();
 
@@ -1300,7 +1316,7 @@ public class Queue extends ResourceController implements Saveable {
         @Exported
         public Calendar timestamp;
 
-        WaitingItem(Calendar timestamp, Task project, List<Action> actions) {
+        public WaitingItem(Calendar timestamp, Task project, List<Action> actions) {
             super(project, actions, COUNTER.incrementAndGet(), new FutureImpl(project));
             this.timestamp = timestamp;
         }

@@ -24,6 +24,8 @@
 package hudson.remoting;
 
 import hudson.remoting.ExportTable.ExportList;
+import hudson.remoting.PipeWindow.Key;
+import hudson.remoting.PipeWindow.Real;
 import hudson.remoting.forward.ListeningPort;
 import hudson.remoting.forward.ForwarderFactory;
 import hudson.remoting.forward.PortForwarder;
@@ -35,15 +37,22 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
+import java.lang.ref.WeakReference;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
 import java.util.Vector;
+import java.util.WeakHashMap;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Formatter;
 import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.net.URL;
 
@@ -141,6 +150,25 @@ public class Channel implements VirtualChannel, IChannel {
     private final ExportTable<Object> exportedObjects = new ExportTable<Object>();
 
     /**
+     * {@link PipeWindow}s keyed by their OIDs (of the OutputStream exported by the other side.)
+     *
+     * <p>
+     * To make the GC of {@link PipeWindow} automatic, the use of weak references here are tricky.
+     * A strong reference to {@link PipeWindow} is kept from {@link ProxyOutputStream}, and
+     * this is the only strong reference. Thus while {@link ProxyOutputStream} is alive,
+     * it keeps {@link PipeWindow} referenced, which in turn keeps its {@link PipeWindow.Real#key}
+     * referenced, hence this map can be looked up by the OID. When the {@link ProxyOutputStream}
+     * will be gone, the key is no longer strongly referenced, so it'll get cleaned up.
+     *
+     * <p>
+     * In some race condition situation, it might be possible for us to lose the tracking of the collect
+     * window size. But as long as we can be sure that there's only one {@link PipeWindow} instance
+     * per OID, it will only result in a temporary spike in the effective window size,
+     * and therefore should be OK.
+     */
+    private final WeakHashMap<PipeWindow.Key, WeakReference<PipeWindow>> pipeWindows = new WeakHashMap<PipeWindow.Key, WeakReference<PipeWindow>>();
+
+    /**
      * Registered listeners. 
      */
     private final Vector<Listener> listeners = new Vector<Listener>();
@@ -207,6 +235,8 @@ public class Channel implements VirtualChannel, IChannel {
      * return right away, and the socket only really times out after 10s of minutes.
      */
     private volatile long lastHeard;
+
+    /*package*/ final ExecutorService pipeWriter;
 
     /**
      * Communication mode.
@@ -278,7 +308,7 @@ public class Channel implements VirtualChannel, IChannel {
 
     /**
      * Creates a new channel.
-     * 
+     *
      * @param name
      *      Human readable name of this channel. Used for debug/logging. Can be anything.
      * @param exec
@@ -306,6 +336,10 @@ public class Channel implements VirtualChannel, IChannel {
      *      safe the resulting behavior is is up to discussion.
      */
     public Channel(String name, ExecutorService exec, Mode mode, InputStream is, OutputStream os, OutputStream header, boolean restricted) throws IOException {
+        this(name,exec,mode,is,os,header,restricted,new Capability());
+    }
+
+    /*package*/ Channel(String name, ExecutorService exec, Mode mode, InputStream is, OutputStream os, OutputStream header, boolean restricted, Capability capability) throws IOException {
         this.name = name;
         this.executor = exec;
         this.isRestricted = restricted;
@@ -321,7 +355,7 @@ public class Channel implements VirtualChannel, IChannel {
         //
         // so use magic preamble and discard all the data up to that to improve robustness.
 
-        new Capability().writePreamble(os);
+        capability.writePreamble(os);
 
         ObjectOutputStream oos = null;
         if(mode!= Mode.NEGOTIATE) {
@@ -361,6 +395,7 @@ public class Channel implements VirtualChannel, IChannel {
                                 }
                                 this.oos = oos;
                                 this.remoteCapability = cap;
+                                this.pipeWriter = createPipeWriter();
                                 this.ois = new ObjectInputStream(mode.wrap(is));
                                 new ReaderThread(name).start();
 
@@ -400,6 +435,24 @@ public class Channel implements VirtualChannel, IChannel {
 
     /*package*/ boolean isOutClosed() {
         return outClosed!=null;
+    }
+
+    /**
+     * Creates the {@link ExecutorService} for writing to pipes.
+     *
+     * <p>
+     * If the throttling is supported, use a separate thread to free up the main channel
+     * reader thread (thus prevent blockage.) Otherwise let the channel reader thread do it,
+     * which is the historical behaviour.
+     */
+    private ExecutorService createPipeWriter() {
+        if (remoteCapability.supportsPipeThrottling())
+            return Executors.newSingleThreadExecutor(new ThreadFactory() {
+                public Thread newThread(Runnable r) {
+                    return new Thread(r,"Pipe writer thread: "+name);
+                }
+            });
+        return new SynchronousExecutorService();
     }
 
     /**
@@ -545,6 +598,26 @@ public class Channel implements VirtualChannel, IChannel {
     public boolean preloadJar(ClassLoader local, URL... jars) throws IOException, InterruptedException {
         return call(new PreloadJarTask(jars,local));
     }
+
+    /*package*/ PipeWindow getPipeWindow(int oid) {
+        if (!remoteCapability.supportsPipeThrottling())
+            return PipeWindow.FAKE;
+
+        synchronized (pipeWindows) {
+            Key k = new Key(oid);
+            WeakReference<PipeWindow> v = pipeWindows.get(k);
+            if (v!=null) {
+                PipeWindow w = v.get();
+                if (w!=null)
+                    return w;
+            }
+
+            Real w = new Real(k, PIPE_WINDOW_SIZE);
+            pipeWindows.put(k,new WeakReference<PipeWindow>(w));
+            return w;
+        }
+    }
+
 
     /**
      * {@inheritDoc}
@@ -897,6 +970,8 @@ public class Channel implements VirtualChannel, IChannel {
             } catch (IOException e) {
                 logger.log(Level.SEVERE, "I/O error in channel "+name,e);
                 terminate(e);
+            } finally {
+                pipeWriter.shutdown();
             }
         }
     }
@@ -925,6 +1000,8 @@ public class Channel implements VirtualChannel, IChannel {
     private static final ThreadLocal<Channel> CURRENT = new ThreadLocal<Channel>();
 
     private static final Logger logger = Logger.getLogger(Channel.class.getName());
+
+    public static final int PIPE_WINDOW_SIZE = Integer.getInteger(Channel.class+".pipeWindowSize",128*1024);
 
 //    static {
 //        ConsoleHandler h = new ConsoleHandler();

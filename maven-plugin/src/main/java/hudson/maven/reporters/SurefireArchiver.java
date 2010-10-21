@@ -62,12 +62,14 @@ public class SurefireArchiver extends MavenReporter {
 
     public boolean preExecute(MavenBuildProxy build, MavenProject pom, MojoInfo mojo, BuildListener listener) throws InterruptedException, IOException {
         if (isSurefireTest(mojo)) {
-            // tell surefire:test to keep going even if there was a failure,
-            // so that we can record this as yellow.
-            // note that because of the way Maven works, just updating system property at this point is too late
-            XmlPlexusConfiguration c = (XmlPlexusConfiguration) mojo.configuration.getChild("testFailureIgnore");
-            if(c!=null && c.getValue().equals("${maven.test.failure.ignore}") && System.getProperty("maven.test.failure.ignore")==null)
-                c.setValue("true");
+            if (!mojo.is("org.apache.maven.plugins", "maven-failsafe-plugin", "integration-test")) {
+                // tell surefire:test to keep going even if there was a failure,
+                // so that we can record this as yellow.
+                // note that because of the way Maven works, just updating system property at this point is too late
+                XmlPlexusConfiguration c = (XmlPlexusConfiguration) mojo.configuration.getChild("testFailureIgnore");
+                if(c!=null && c.getValue().equals("${maven.test.failure.ignore}") && System.getProperty("maven.test.failure.ignore")==null)
+                    c.setValue("true");
+            }
         }
         return true;
     }
@@ -78,7 +80,8 @@ public class SurefireArchiver extends MavenReporter {
         listener.getLogger().println(Messages.SurefireArchiver_Recording());
 
         File reportsDir;
-        if (mojo.is("org.apache.maven.plugins", "maven-surefire-plugin", "test")) {
+        if (mojo.is("org.apache.maven.plugins", "maven-surefire-plugin", "test") ||
+            mojo.is("org.apache.maven.plugins", "maven-failsafe-plugin", "integration-test")) {
             try {
                 reportsDir = mojo.getConfigurationValue("reportsDirectory", File.class);
             } catch (ComponentConfigurationException e) {
@@ -101,11 +104,8 @@ public class SurefireArchiver extends MavenReporter {
                 // no test in this module
                 return true;
 
-            if(result==null) {
-                long t = System.currentTimeMillis() - build.getMilliSecsSinceBuildStart();
-                result = new TestResult(t - 1000/*error margin*/, ds, true);
-            } else
-                result.parse(build.getTimestamp().getTimeInMillis() - 1000/*error margin*/, ds);
+            if(result==null)    result = new TestResult();
+            result.parse(System.currentTimeMillis() - build.getMilliSecsSinceBuildStart(), ds);
 
             int failCount = build.execute(new BuildCallable<Integer, IOException>() {
                 public Integer call(MavenBuild build) throws IOException, InterruptedException {
@@ -159,7 +159,8 @@ public class SurefireArchiver extends MavenReporter {
     private boolean isSurefireTest(MojoInfo mojo) {
         if ((!mojo.is("com.sun.maven", "maven-junit-plugin", "test"))
             && (!mojo.is("org.sonatype.flexmojos", "flexmojos-maven-plugin", "test-run"))
-            && (!mojo.is("org.apache.maven.plugins", "maven-surefire-plugin", "test")))
+            && (!mojo.is("org.apache.maven.plugins", "maven-surefire-plugin", "test"))
+            && (!mojo.is("org.apache.maven.plugins", "maven-failsafe-plugin", "integration-test")))
             return false;
 
         try {

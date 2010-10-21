@@ -23,8 +23,8 @@
  */
 package hudson.model;
 
+import hudson.model.Queue.Executable;
 import hudson.Util;
-import hudson.model.Queue.*;
 import hudson.FilePath;
 import hudson.model.queue.SubTask;
 import hudson.model.queue.Tasks;
@@ -43,6 +43,8 @@ import java.io.IOException;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.lang.reflect.Method;
+
+import static hudson.model.queue.Executables.*;
 
 
 /**
@@ -267,7 +269,7 @@ public class Executor extends Thread implements ModelObject {
     public int getProgress() {
         Queue.Executable e = executable;
         if(e==null)     return -1;
-        long d = e.getParent().getEstimatedDuration();
+        long d = getParentOf(e).getEstimatedDuration();
         if(d<0)         return -1;
 
         int num = (int)(getElapsedTime()*100/d);
@@ -288,7 +290,7 @@ public class Executor extends Thread implements ModelObject {
         if(e==null)     return false;
 
         long elapsed = getElapsedTime();
-        long d = e.getParent().getEstimatedDuration();
+        long d = getParentOf(e).getEstimatedDuration();
         if(d>=0) {
             // if it's taking 10 times longer than ETA, consider it stuck
             return d*10 < elapsed;
@@ -320,7 +322,7 @@ public class Executor extends Thread implements ModelObject {
         Queue.Executable e = executable;
         if(e==null)     return Messages.Executor_NotAvailable();
 
-        long d = e.getParent().getEstimatedDuration();
+        long d = getParentOf(e).getEstimatedDuration();
         if(d<0)         return Messages.Executor_NotAvailable();
 
         long eta = d-getElapsedTime();
@@ -337,7 +339,7 @@ public class Executor extends Thread implements ModelObject {
         Queue.Executable e = executable;
         if(e==null)     return -1;
 
-        long d = e.getParent().getEstimatedDuration();
+        long d = getParentOf(e).getEstimatedDuration();
         if(d<0)         return -1;
 
         long eta = d-getElapsedTime();
@@ -352,7 +354,7 @@ public class Executor extends Thread implements ModelObject {
     public void doStop( StaplerRequest req, StaplerResponse rsp ) throws IOException, ServletException {
         Queue.Executable e = executable;
         if(e!=null) {
-            Tasks.getOwnerTaskOf(e.getParent()).checkAbortPermission();
+            Tasks.getOwnerTaskOf(getParentOf(e)).checkAbortPermission();
             interrupt();
         }
         rsp.forwardToPreviousPage(req);
@@ -363,7 +365,7 @@ public class Executor extends Thread implements ModelObject {
      */
     public boolean hasStopPermission() {
         Queue.Executable e = executable;
-        return e!=null && Tasks.getOwnerTaskOf(e.getParent()).hasAbortPermission();
+        return e!=null && Tasks.getOwnerTaskOf(getParentOf(e)).hasAbortPermission();
     }
 
     public Computer getOwner() {
@@ -377,7 +379,7 @@ public class Executor extends Thread implements ModelObject {
         if (isIdle())
             return Math.max(finishTime, owner.getConnectTime());
         else {
-            return Math.max(startTime + Math.max(0, executable.getParent().getEstimatedDuration()),
+            return Math.max(startTime + Math.max(0, getParentOf(executable).getEstimatedDuration()),
                     System.currentTimeMillis() + 15000);
         }
     }

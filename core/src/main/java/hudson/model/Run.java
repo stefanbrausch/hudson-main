@@ -266,6 +266,13 @@ public abstract class Run <JobT extends Job<JobT,RunT>,RunT extends Run<JobT,Run
                 ((RunAction) a).onLoad();
     }
 
+    @Override
+    public void addAction(Action a) {
+        super.addAction(a);
+        if (a instanceof RunAction)
+            ((RunAction) a).onAttached(this);
+    }
+
     /*package*/ static long parseTimestampFromBuildDir(File buildDir) throws IOException {
         try {
             return ID_FORMATTER.get().parse(buildDir.getName()).getTime();
@@ -1278,6 +1285,7 @@ public abstract class Run <JobT extends Job<JobT,RunT>,RunT extends Run<JobT,Run
                     throw t;
                 } catch( AbortException e ) {// orderly abortion.
                     result = Result.FAILURE;
+                    listener.error(e.getMessage());
                     LOGGER.log(FINE, "Build "+this+" aborted",e);
                 } catch( RunnerAbortedException e ) {// orderly abortion.
                     result = Result.FAILURE;
@@ -1700,7 +1708,7 @@ public abstract class Run <JobT extends Job<JobT,RunT>,RunT extends Run<JobT,Run
      */
     public final EnvVars getCharacteristicEnvVars() {
         EnvVars env = new EnvVars();
-        env.put("HUDSON_COOKIE",Util.getDigestOf("ServerID:"+Hudson.getInstance().getSecretKey()));
+        env.put("HUDSON_SERVER_COOKIE",Util.getDigestOf("ServerID:"+Hudson.getInstance().getSecretKey()));
         env.put("BUILD_NUMBER",String.valueOf(number));
         env.put("BUILD_ID",getId());
         env.put("BUILD_TAG","hudson-"+getParent().getName()+"-"+number);

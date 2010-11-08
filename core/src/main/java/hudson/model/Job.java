@@ -33,6 +33,7 @@ import hudson.PermalinkList;
 import hudson.Extension;
 import hudson.cli.declarative.CLIResolver;
 import hudson.model.Descriptor.FormException;
+import hudson.model.listeners.ItemListener;
 import hudson.model.PermalinkProjectAction.Permalink;
 import hudson.model.Fingerprint.RangeSet;
 import hudson.model.Fingerprint.Range;

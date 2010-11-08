@@ -65,7 +65,6 @@ import hudson.logging.LogRecorderManager;
 import hudson.lifecycle.RestartNotSupportedException;
 import hudson.model.Descriptor.FormException;
 import hudson.model.labels.LabelAtom;
-import hudson.model.listeners.ConfigurationListener;
 import hudson.model.listeners.ItemListener;
 import hudson.model.listeners.SCMListener;
 import hudson.model.listeners.SaveableListener;
@@ -1288,28 +1287,6 @@ public final class Hudson extends Node implements ItemGroup<TopLevelItem>, Stapl
     @Exported
     public synchronized Collection<View> getViews() {
         List<View> copy = new ArrayList<View>(views);
-        Iterator<View> iter = copy.iterator();
-        while(iter.hasNext()) {
-           View lv = iter.next();
-           if ((lv instanceof OneAndOneView) && (((OneAndOneView)lv).getViewType()!=null)){
-             if((!Hudson.getInstance().hasPermission(Hudson.ADMINISTER))&& (((OneAndOneView)lv).getViewType().equals(OneAndOneView.VIEWTYPEADMIN)))
-                  iter.remove();
-              else if (((OneAndOneView)lv).getViewType().equals(OneAndOneView.VIEWTYPEUSER) && (Hudson.getAuthentication().getName()==null))
-                  iter.remove();
-              else if (((OneAndOneView)lv).getViewType().equals(OneAndOneView.VIEWTYPEUSER) && (Hudson.getAuthentication().getName()!=null)){
-                  String[] users = ((OneAndOneView)lv).getViewUserName().split("[,\\s]+");
-                  boolean removeEntry = true;
-                  for(int i=0;i<users.length;i++){
-                     if(Hudson.getAuthentication().getName().equals(users[i]))
-                        removeEntry = false;
-                  }
-                  if (removeEntry)
-                     iter.remove();
-              }
-
-           }
-
-        }
         Collections.sort(copy, View.SORTER);
         return copy;
     }
@@ -2354,8 +2331,6 @@ public final class Hudson extends Node implements ItemGroup<TopLevelItem>, Stapl
         BulkChange bc = new BulkChange(this);
         try {
             checkPermission(ADMINISTER);
-            for (ConfigurationListener l : ConfigurationListener.all())
-                l.onChanged();
 
             req.setCharacterEncoding("UTF-8");
 

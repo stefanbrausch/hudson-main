@@ -1286,9 +1286,32 @@ public final class Hudson extends Node implements ItemGroup<TopLevelItem>, Stapl
      */
     @Exported
     public synchronized Collection<View> getViews() {
-        List<View> copy = new ArrayList<View>(views);
-        Collections.sort(copy, View.SORTER);
-        return copy;
+        List<View> myViews = new ArrayList<View>(views);
+        Iterator<View> iter = myViews.iterator();
+        while(iter.hasNext()) {
+           View lv = iter.next();
+           if ((lv instanceof OneAndOneView) && (((OneAndOneView)lv).getViewType()!=null)){
+              if((!Hudson.getInstance().hasPermission(Hudson.ADMINISTER))&& (((OneAndOneView)lv).getViewType().equals(OneAndOneView.VIEWTYPEADMIN)))
+                  iter.remove();
+              else if (((OneAndOneView)lv).getViewType().equals(OneAndOneView.VIEWTYPEUSER) && (Hudson.getAuthentication().getName()==null))
+                  iter.remove();
+              else if (((OneAndOneView)lv).getViewType().equals(OneAndOneView.VIEWTYPEUSER) && (Hudson.getAuthentication().getName()!=null)){
+                  String[] users = ((OneAndOneView)lv).getViewUserName().split("[,\\s]+");
+                  boolean removeEntry = true;
+                  for(int i=0;i<users.length;i++){
+                     if(Hudson.getAuthentication().getName().equals(users[i]))
+                        removeEntry = false;
+                     }
+                     if (removeEntry)
+                        iter.remove();
+                     }
+
+                  }
+
+           }
+
+           Collections.sort(myViews, View.SORTER);
+           return myViews; 
     }
 
     public void addView(View v) throws IOException {

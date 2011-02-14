@@ -3,13 +3,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <artifactId>pom</artifactId>
-<<<<<<< HEAD
-    <groupId>org.jvnet.hudson.main</groupId>
-    <version>1.389-SNAPSHOT</version>
-=======
     <groupId>org.jenkins-ci.main</groupId>
-    <version>1.397</version>
->>>>>>> jenkins-1_397
+    <version>1.398-SNAPSHOT</version>
   </parent>
   <artifactId>cli</artifactId>
   <name>Jenkins CLI</name>

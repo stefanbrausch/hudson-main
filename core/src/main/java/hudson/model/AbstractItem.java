@@ -24,6 +24,7 @@
  */
 package hudson.model;
 
+import com.infradna.tool.bridge_method_injector.WithBridgeMethods;
 import hudson.XmlFile;
 import hudson.Util;
 import hudson.Functions;
@@ -35,8 +36,11 @@ import hudson.model.listeners.SaveableListener;
 import hudson.security.AccessControlled;
 import hudson.security.Permission;
 import hudson.security.ACL;
+import hudson.util.AtomicFileWriter;
+import hudson.util.IOException2;
 import org.apache.tools.ant.taskdefs.Copy;
 import org.apache.tools.ant.types.FileSet;
+import org.kohsuke.stapler.WebMethod;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
@@ -52,6 +56,13 @@ import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
 
 import javax.servlet.ServletException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
+import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 
 /**
  * Partial default implementation of {@link Item}.
@@ -88,6 +99,14 @@ public abstract class AbstractItem extends Actionable implements Item, HttpDelet
         return name;
     }
 
+    /**
+     * Get the term used in the UI to represent this kind of
+     * {@link Item}. Must start with a capital letter.
+     */
+    public String getPronoun() {
+        return Messages.AbstractItem_Pronoun();
+    }
+
     @Exported
     public String getDisplayName() {
         return getName();
@@ -97,6 +116,10 @@ public abstract class AbstractItem extends Actionable implements Item, HttpDelet
         return parent.getRootDirFor(this);
     }
 
+    /**
+     * This bridge method is to maintain binary compatibility with {@link TopLevelItem#getParent()}.
+     */
+    @WithBridgeMethods(value=Hudson.class,castRequired=true)
     public ItemGroup getParent() {
         assert parent!=null;
         return parent;
@@ -358,7 +381,6 @@ public abstract class AbstractItem extends Actionable implements Item, HttpDelet
     public synchronized void doSubmitDescription( StaplerRequest req, StaplerResponse rsp ) throws IOException, ServletException {
         checkPermission(CONFIGURE);
 
-        req.setCharacterEncoding("UTF-8");
         setDescription(req.getParameter("description"));
         rsp.sendRedirect(".");  // go to the top page
     }
@@ -368,7 +390,6 @@ public abstract class AbstractItem extends Actionable implements Item, HttpDelet
      */
     @CLIMethod(name="delete-job")
     public void doDoDelete( StaplerRequest req, StaplerResponse rsp ) throws IOException, ServletException, InterruptedException {
-        checkPermission(DELETE);
         requirePOST();
         delete();
         if (rsp != null) // null for CLI
@@ -388,12 +409,24 @@ public abstract class AbstractItem extends Actionable implements Item, HttpDelet
      * Deletes this item.
      */
     public synchronized void delete() throws IOException, InterruptedException {
+        checkPermission(DELETE);
         performDelete();
 
-        if(this instanceof TopLevelItem)
-            Hudson.getInstance().deleteJob((TopLevelItem)this);
+        try {
+            invokeOnDeleted();
+        } catch (AbstractMethodError e) {
+            // ignore
+        }
 
         Hudson.getInstance().rebuildDependencyGraph();
+    }
+
+    /**
+     * A pointless function to work around what appears to be a HotSpot problem. See HUDSON-5756 and bug 6933067
+     * on BugParade for more details.
+     */
+    private void invokeOnDeleted() throws IOException {
+        getParent().onDeleted(this);
     }
 
     /**
@@ -402,6 +435,54 @@ public abstract class AbstractItem extends Actionable implements Item, HttpDelet
     protected void performDelete() throws IOException, InterruptedException {
         getConfigFile().delete();
         Util.deleteRecursive(getRootDir());
+    }
+
+    /**
+     * Accepts <tt>config.xml</tt> submission, as well as serve it.
+     */
+    @WebMethod(name = "config.xml")
+    public void doConfigDotXml(StaplerRequest req, StaplerResponse rsp)
+            throws IOException {
+        if (req.getMethod().equals("GET")) {
+            // read
+            checkPermission(EXTENDED_READ);
+            rsp.setContentType("application/xml;charset=UTF-8");
+            getConfigFile().writeRawTo(rsp.getWriter());
+            return;
+        }
+        if (req.getMethod().equals("POST")) {
+            // submission
+            checkPermission(CONFIGURE);
+            XmlFile configXmlFile = getConfigFile();
+            AtomicFileWriter out = new AtomicFileWriter(configXmlFile.getFile());
+            try {
+                try {
+                    // this allows us to use UTF-8 for storing data,
+                    // plus it checks any well-formedness issue in the submitted
+                    // data
+                    Transformer t = TransformerFactory.newInstance()
+                            .newTransformer();
+                    t.transform(new StreamSource(req.getReader()),
+                            new StreamResult(out));
+                    out.close();
+                } catch (TransformerException e) {
+                    throw new IOException2("Failed to persist configuration.xml", e);
+                }
+
+                // try to reflect the changes by reloading
+                new XmlFile(Items.XSTREAM, out.getTemporaryFile()).unmarshal(this);
+                onLoad(getParent(), getRootDir().getName());
+
+                // if everything went well, commit this new version
+                out.commit();
+            } finally {
+                out.abort(); // don't leave anything behind
+            }
+            return;
+        }
+
+        // huh?
+        rsp.sendError(SC_BAD_REQUEST);
     }
 
     public String toString() {

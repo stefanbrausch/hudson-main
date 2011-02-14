@@ -76,7 +76,14 @@ public abstract class ViewJob<JobT extends ViewJob<JobT,RunT>, RunT extends Run<
         reloadThread.start();
     }
 
+    /**
+     * @deprecated as of 1.390
+     */
     protected ViewJob(Hudson parent, String name) {
+        super(parent,name);
+    }
+
+    protected ViewJob(ItemGroup parent, String name) {
         super(parent,name);
     }
 
@@ -151,6 +158,10 @@ public abstract class ViewJob<JobT extends ViewJob<JobT,RunT>, RunT extends Run<
      * Thread that reloads the {@link Run}s.
      */
     private static final class ReloadThread extends Thread {
+        private ReloadThread() {
+            setName("ViewJob reload thread");
+        }
+
         private ViewJob getNext() throws InterruptedException {
             synchronized(reloadQueue) {
                 // reload operations might eat InterruptException,

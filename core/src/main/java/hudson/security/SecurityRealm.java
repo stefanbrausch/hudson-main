@@ -33,6 +33,7 @@ import hudson.cli.CLICommand;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
 import hudson.model.Hudson;
+import hudson.security.FederatedLoginService.FederatedIdentity;
 import hudson.util.DescriptorList;
 import hudson.util.PluginServletFilter;
 import hudson.util.spring.BeanBuilder;
@@ -47,6 +48,7 @@ import static org.acegisecurity.ui.rememberme.TokenBasedRememberMeServices.ACEGI
 import org.acegisecurity.userdetails.UserDetailsService;
 import org.acegisecurity.userdetails.UserDetails;
 import org.acegisecurity.userdetails.UsernameNotFoundException;
+import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.Stapler;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
@@ -186,6 +188,11 @@ public abstract class SecurityRealm extends AbstractDescribableImpl<SecurityReal
      * On legacy implementation this should point to {@code loginEntry}, which
      * is protected by <tt>web.xml</tt>, so that the user can be eventually authenticated
      * by the container.
+     *
+     * <p>
+     * Path is relative from the context root of the Hudson application.
+     * The URL returned by this method will get the "from" query parameter indicating
+     * the page that the user was at.
      */
     public String getLoginUrl() {
         return "login";
@@ -295,6 +302,28 @@ public abstract class SecurityRealm extends AbstractDescribableImpl<SecurityReal
     }
 
     /**
+     * Starts the user registration process for a new user that has the given verified identity.
+     *
+     * <p>
+     * If the user logs in through a {@link FederatedLoginService}, verified that the current user
+     * owns an {@linkplain FederatedIdentity identity}, but no existing user account has claimed that identity,
+     * then this method is invoked.
+     *
+     * <p>
+     * The expected behaviour is to confirm that the user would like to create a new account, and
+     * associate this federated identity to the newly created account (via {@link FederatedIdentity#addToCurrentUser()}.
+     *
+     * @throws UnsupportedOperationException
+     *      If this implementation doesn't support the signup through this mechanism.
+     *      This is the default implementation.
+     *
+     * @since 1.394
+     */
+    public HttpResponse commenceSignup(FederatedIdentity identity) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * {@link DefaultManageableImageCaptchaService} holder to defer initialization.
      */
     private static final class CaptchaService {
@@ -382,6 +411,7 @@ public abstract class SecurityRealm extends AbstractDescribableImpl<SecurityReal
         Binding binding = new Binding();
         SecurityComponents sc = getSecurityComponents();
         binding.setVariable("securityComponents", sc);
+        binding.setVariable("securityRealm",this);
         BeanBuilder builder = new BeanBuilder();
         builder.parse(filterConfig.getServletContext().getResourceAsStream("/WEB-INF/security/SecurityFilters.groovy"),binding);
         WebApplicationContext context = builder.createApplicationContext();

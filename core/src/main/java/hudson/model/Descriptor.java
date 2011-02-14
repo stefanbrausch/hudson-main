@@ -23,6 +23,8 @@
  */
 package hudson.model;
 
+import hudson.DescriptorExtensionList;
+import hudson.ExtensionComponent;
 import hudson.RelativePath;
 import hudson.XmlFile;
 import hudson.BulkChange;
@@ -194,6 +196,13 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
         public Descriptor getItemTypeDescriptorOrDie() {
             return Hudson.getInstance().getDescriptorOrDie(getItemType());
         }
+
+        /**
+         * Returns all the descriptors that produce types assignable to the item type.
+         */
+        public List<? extends Descriptor> getApplicableDescriptors() {
+            return Hudson.getInstance().getDescriptorList(clazz);
+        }
     }
 
     protected Descriptor(Class<? extends T> clazz) {
@@ -244,11 +253,44 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
     public abstract String getDisplayName();
 
     /**
+     * Uniquely identifies this {@link Descriptor} among all the other {@link Descriptor}s.
+     *
+     * <p>
+     * Historically {@link #clazz} is assumed to be unique, so this method uses that as the default,
+     * but if you are adding {@link Descriptor}s programmatically for the same type, you can change
+     * this to disambiguate them.
+     *
+     * @return
+     *      Stick to valid Java identifier character, plus '.', which had to be allowed for historical reasons.
+     * 
+     * @since 1.391
+     */
+    public String getId() {
+        return clazz.getName();
+    }
+
+    /**
+     * Unlike {@link #clazz}, return the parameter type 'T', which determines
+     * the {@link DescriptorExtensionList} that this goes to.
+     *
+     * <p>
+     * In those situations where subtypes cannot provide the type parameter,
+     * this method can be overridden to provide it.
+     */
+    public Class<T> getT() {
+        Type subTyping = Types.getBaseClass(getClass(), Descriptor.class);
+        if (!(subTyping instanceof ParameterizedType)) {
+            throw new IllegalStateException(getClass()+" doesn't extend Descriptor with a type parameter.");
+        }
+        return Types.erasure(Types.getTypeArgument(subTyping, 0));
+    }
+
+    /**
      * Gets the URL that this Descriptor is bound to, relative to the nearest {@link DescriptorByNameOwner}.
      * Since {@link Hudson} is a {@link DescriptorByNameOwner}, there's always one such ancestor to any request.
      */
     public String getDescriptorUrl() {
-        return "descriptorByName/"+clazz.getName();
+        return "descriptorByName/"+getId();
     }
 
     private String getCurrentDescriptorByNameUrl() {
@@ -424,7 +466,7 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
      * Gets the class name nicely escaped to be usable as a key in the structured form submission.
      */
     public final String getJsonSafeClassName() {
-        return clazz.getName().replace('.','-');
+        return getId().replace('.','-');
     }
 
     /**
@@ -463,7 +505,7 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
      *      Always non-null (see note above.) This object includes represents the entire submission.
      * @param formData
      *      The JSON object that captures the configuration data for this {@link Descriptor}.
-     *      See http://hudson.gotdns.com/wiki/display/HUDSON/Structured+Form+Submission
+     *      See http://wiki.jenkins-ci.org/display/JENKINS/Structured+Form+Submission
      *      Always non-null.
      *
      * @throws FormException
@@ -540,7 +582,7 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
      */
     public String getHelpFile(final String fieldName) {
         for(Class c=clazz; c!=null; c=c.getSuperclass()) {
-            String page = "/descriptor/" + clazz.getName() + "/help";
+            String page = "/descriptor/" + getId() + "/help";
             String suffix;
             if(fieldName==null) {
                 suffix="";
@@ -592,7 +634,7 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
      *
      * @param json
      *      The JSON object that captures the configuration data for this {@link Descriptor}.
-     *      See http://hudson.gotdns.com/wiki/display/HUDSON/Structured+Form+Submission
+     *      See http://wiki.jenkins-ci.org/display/JENKINS/Structured+Form+Submission
      * @return false
      *      to keep the client in the same config page.
      */
@@ -663,7 +705,7 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
     }
 
     private XmlFile getConfigFile() {
-        return new XmlFile(new File(Hudson.getInstance().getRootDir(),clazz.getName()+".xml"));
+        return new XmlFile(new File(Hudson.getInstance().getRootDir(),getId()+".xml"));
     }
 
     /**
@@ -758,13 +800,21 @@ public abstract class Descriptor<T extends Describable<T>> implements Saveable {
 
         List<T> items = new ArrayList<T>();
 
-        if(!formData.has(key))   return items;
-        JSONArray a = JSONArray.fromObject(formData.get(key));
+        return newInstancesFromHeteroList(req,formData.get(key),descriptors);
+    }
 
-        for (Object o : a) {
-            JSONObject jo = (JSONObject)o;
-            String kind = jo.getString("kind");
-            items.add(find(descriptors,kind).newInstance(req,jo));
+    public static <T extends Describable<T>>
+    List<T> newInstancesFromHeteroList(StaplerRequest req, Object formData,
+                Collection<? extends Descriptor<T>> descriptors) throws FormException {
+
+        List<T> items = new ArrayList<T>();
+
+        if (formData!=null) {
+            for (Object o : JSONArray.fromObject(formData)) {
+                JSONObject jo = (JSONObject)o;
+                String kind = jo.getString("kind");
+                items.add(find(descriptors,kind).newInstance(req,jo));
+            }
         }
 
         return items;

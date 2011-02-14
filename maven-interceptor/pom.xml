@@ -25,26 +25,38 @@ THE SOFTWARE.
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>org.jvnet.hudson.main</groupId>
+    <groupId>org.jenkins-ci.main</groupId>
     <artifactId>pom</artifactId>
+<<<<<<< HEAD
     <version>1.389-SNAPSHOT</version>
+=======
+    <version>1.397</version>
+>>>>>>> jenkins-1_397
     <relativePath>../pom.xml</relativePath>
   </parent>
   
   <artifactId>maven-interceptor</artifactId>
   <packaging>jar</packaging>
-  <name>Hudson Maven PluginManager interceptor</name>
+  <name>Jenkins Maven 2 PluginManager interceptor</name>
   <description>
     Plexus module that intercepts invocations of key Maven components
-    so that Hudson can monitor what's going on in Maven.
+    so that Jenkins can monitor what's going on in Maven.
   </description>
 
   <dependencies>
     <dependency>
       <groupId>org.apache.maven</groupId>
       <artifactId>maven-core</artifactId>
-      <version>${maven.version}</version>
+      <version>2.0.9</version>
+      <scope>provided</scope>
     </dependency>
+
+    <dependency>
+      <groupId>classworlds</groupId>
+      <artifactId>classworlds</artifactId>
+      <version>1.1</version>
+    </dependency>
+   
 
     <dependency>
       <!-- default dependency to 2.0.2 confuses IntelliJ. Otherwise this value doesn't really affect build or runtime. -->

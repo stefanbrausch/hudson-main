@@ -2,6 +2,7 @@
  * The MIT License
  * 
  * Copyright (c) 2004-2009, Sun Microsystems, Inc., Kohsuke Kawaguchi, Jorg Heymans, Peter Hayes, Red Hat, Inc., Stephen Connolly, id:cactusman
+ * Olivier Lamy
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,33 +24,72 @@
  */
 package hudson.maven;
 
-import hudson.*;
-import hudson.model.*;
+import static hudson.Util.fixEmpty;
+import static hudson.model.ItemGroupMixIn.loadChildren;
+import hudson.CopyOnWrite;
+import hudson.Extension;
+import hudson.FilePath;
+import hudson.Indenter;
+import hudson.Util;
+import hudson.model.AbstractProject;
+import hudson.model.Action;
+import hudson.model.BuildableItemWithBuildWrappers;
+import hudson.model.DependencyGraph;
+import hudson.model.Descriptor;
 import hudson.model.Descriptor.FormException;
+import hudson.model.Executor;
+import hudson.model.Hudson;
+import hudson.model.Item;
+import hudson.model.ItemGroup;
+import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.Queue.Task;
+import hudson.model.ResourceActivity;
+import hudson.model.SCMedItem;
+import hudson.model.Saveable;
+import hudson.model.TopLevelItem;
 import hudson.search.CollectionSearchIndex;
 import hudson.search.SearchIndexBuilder;
-import hudson.tasks.*;
+import hudson.tasks.BuildStep;
+import hudson.tasks.BuildStepDescriptor;
+import hudson.tasks.BuildWrapper;
+import hudson.tasks.BuildWrappers;
+import hudson.tasks.Fingerprinter;
+import hudson.tasks.JavadocArchiver;
+import hudson.tasks.Mailer;
+import hudson.tasks.Maven;
 import hudson.tasks.Maven.MavenInstallation;
+import hudson.tasks.Publisher;
 import hudson.tasks.junit.JUnitResultArchiver;
 import hudson.util.CopyOnWriteMap;
 import hudson.util.DescribableList;
 import hudson.util.FormValidation;
 import hudson.util.Function1;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.Stack;
+
+import javax.servlet.ServletException;
+
 import net.sf.json.JSONObject;
+
+import org.apache.commons.lang.math.NumberUtils;
+import org.apache.maven.model.building.ModelBuildingRequest;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.export.Exported;
-
-import javax.servlet.ServletException;
-import java.io.File;
-import java.io.IOException;
-import java.util.*;
-
-import static hudson.Util.fixEmpty;
-import static hudson.model.ItemGroupMixIn.loadChildren;
 
 /**
  * Group of {@link MavenModule}s.
@@ -144,6 +184,25 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
      * If true, do not archive artifacts to the master.
      */
     private boolean archivingDisabled = false;
+    
+    /**
+     * parameter for pom parsing by default <code>false</code> to be faster
+     * @since 1.394
+     */
+    private boolean resolveDependencies = false;
+    
+    /**
+     * parameter for pom parsing by default <code>false</code> to be faster
+     * @since 1.394
+     */    
+    private boolean processPlugins = false;
+    
+    /**
+     * parameter for validation level during pom parsing by default the one corresponding
+     * to the maven version used (2 or 3)
+     * @since 1.394
+     */    
+    private int mavenValidationLevel = -1;
 
     /**
      * Reporters configured at {@link MavenModuleSet} level. Applies to all {@link MavenModule} builds.
@@ -166,16 +225,16 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
         new DescribableList<BuildWrapper, Descriptor<BuildWrapper>>(this);
 
     public MavenModuleSet(String name) {
+        this(Hudson.getInstance(),name);
+    }
+
+    public MavenModuleSet(ItemGroup parent, String name) {
         super(Hudson.getInstance(),name);
     }
 
     public String getUrlChildPrefix() {
         // seemingly redundant "./" is used to make sure that ':' is not interpreted as the scheme identifier
         return ".";
-    }
-
-    public Hudson getParent() {
-        return Hudson.getInstance();
     }
 
     public Collection<MavenModule> getItems() {
@@ -321,7 +380,28 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
     public void setIsArchivingDisabled(boolean archivingDisabled) {
         this.archivingDisabled = archivingDisabled;
     }
+    
+    public boolean isResolveDependencies()
+    {
+        return resolveDependencies;
+    }
 
+    public void setResolveDependencies( boolean resolveDependencies ) {
+        this.resolveDependencies = resolveDependencies;
+    }
+
+    public boolean isProcessPlugins() {
+        return processPlugins;
+    }
+
+    public void setProcessPlugins( boolean processPlugins ) {
+        this.processPlugins = processPlugins;
+    }    
+
+    public int getMavenValidationLevel() {
+        return mavenValidationLevel;
+    }    
+    
     /**
      * List of active {@link MavenReporter}s that should be applied to all module builds.
      */
@@ -367,6 +447,10 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
 
     public void onRenamed(MavenModule item, String oldName, String newName) throws IOException {
         throw new UnsupportedOperationException();
+    }
+
+    public void onDeleted(MavenModule item) throws IOException {
+        // noop
     }
 
     public Collection<Job> getAllJobs() {
@@ -624,7 +708,7 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
      * Check for "-N" or "--non-recursive" in the Maven goals/options.
      */
     public boolean isNonRecursive() {
-	return checkMavenOption("-N", "--non-recursive");
+        return checkMavenOption("-N", "--non-recursive");
     }
 
     /**
@@ -727,7 +811,9 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
         ignoreUpstremChanges = !json.has("triggerByDependency");
         incrementalBuild = req.hasParameter("maven.incrementalBuild");
         archivingDisabled = req.hasParameter("maven.archivingDisabled");
-        
+        resolveDependencies = req.hasParameter( "maven.resolveDependencies" );
+        processPlugins = req.hasParameter( "maven.processPlugins" );
+        mavenValidationLevel = NumberUtils.toInt( req.getParameter( "maven.validationLevel" ), -1 );
         reporters.rebuild(req,json,MavenReporters.getConfigurableList());
         publishers.rebuild(req,json,BuildStepDescriptor.filter(Publisher.all(),this.getClass()));
         buildWrappers.rebuild(req,json,BuildWrappers.getFor(this));
@@ -790,10 +876,21 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
          * Globally-defined MAVEN_OPTS.
          */
         private String globalMavenOpts;
+        
+        /**
+         * @since 1.394
+         */
+        private Map<String, Integer> mavenValidationLevels = new LinkedHashMap<String, Integer>();
 
         public DescriptorImpl() {
             super();
             load();
+            mavenValidationLevels.put( "DEFAULT", -1 );
+            mavenValidationLevels.put( "LEVEL_MINIMAL", ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL );
+            mavenValidationLevels.put( "LEVEL_MAVEN_2_0", ModelBuildingRequest.VALIDATION_LEVEL_MAVEN_2_0 );
+            mavenValidationLevels.put( "LEVEL_MAVEN_3_0", ModelBuildingRequest.VALIDATION_LEVEL_MAVEN_3_0 );
+            mavenValidationLevels.put( "LEVEL_MAVEN_3_1", ModelBuildingRequest.VALIDATION_LEVEL_MAVEN_3_1 );
+            mavenValidationLevels.put( "LEVEL_STRICT", ModelBuildingRequest.VALIDATION_LEVEL_STRICT );
         }
         
         public String getGlobalMavenOpts() {
@@ -809,12 +906,20 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
             return Messages.MavenModuleSet_DiplayName();
         }
 
-        public MavenModuleSet newInstance(String name) {
-            return new MavenModuleSet(name);
+        public MavenModuleSet newInstance(ItemGroup parent, String name) {
+            return new MavenModuleSet(parent,name);
         }
 
         public Maven.DescriptorImpl getMavenDescriptor() {
             return Hudson.getInstance().getDescriptorByType(Maven.DescriptorImpl.class);
+        }
+        
+        /**
+         * @since 1.394
+         * @return
+         */
+        public Map<String, Integer> getMavenValidationLevels() {
+            return mavenValidationLevels;
         }
 
         @Override
@@ -836,5 +941,13 @@ public final class MavenModuleSet extends AbstractMavenProject<MavenModuleSet,Ma
             Mailer.class,           // for historical reasons, Maven uses MavenMailer
             JUnitResultArchiver.class // done by SurefireArchiver
         ));
+
+
     }
+
+
+
+
+
+
 }

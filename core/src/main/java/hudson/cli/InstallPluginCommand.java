@@ -27,14 +27,18 @@ import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Hudson;
 import hudson.model.UpdateSite;
+import hudson.model.UpdateSite.Data;
+import hudson.util.EditDistance;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 
 import java.io.File;
 import java.net.URL;
 import java.net.MalformedURLException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Set;
 
 /**
  * Installs a plugin either from a file, an URL, or from update center.
@@ -68,7 +72,7 @@ public class InstallPluginCommand extends CLICommand {
             // is this a file?
             FilePath f = new FilePath(channel, source);
             if (f.exists()) {
-                stdout.println("Installing a plugin from local file: "+f);
+                stdout.println(Messages.InstallPluginCommand_InstallingPluginFromLocalFile(f));
                 if (name==null)
                     name = f.getBaseName();
                 f.copyTo(getTargetFile());
@@ -78,7 +82,7 @@ public class InstallPluginCommand extends CLICommand {
             // is this an URL?
             try {
                 URL u = new URL(source);
-                stdout.println("Installing a plugin from "+u);
+                stdout.println(Messages.InstallPluginCommand_InstallingPluginFromUrl(u));
                 if (name==null) {
                     name = u.getPath();
                     name = name.substring(name.indexOf('/')+1);
@@ -95,12 +99,29 @@ public class InstallPluginCommand extends CLICommand {
             // is this a plugin the update center?
             UpdateSite.Plugin p = h.getUpdateCenter().getPlugin(source);
             if (p!=null) {
-                stdout.println("Installing "+source+" from update center");
+                stdout.println(Messages.InstallPluginCommand_InstallingFromUpdateCenter(source));
                 p.deploy().get();
                 continue;
             }
 
-            stdout.println(source+" is neither a valid file, URL, nor a plugin artifact name in the update center");
+            stdout.println(Messages.InstallPluginCommand_NotAValidSourceName(source));
+
+            if (!source.contains(".") && !source.contains(":") && !source.contains("/") && !source.contains("\\")) {
+                // looks like a short plugin name. Why did we fail to find it in the update center?
+                if (h.getUpdateCenter().getSites().isEmpty()) {
+                    stdout.println(Messages.InstallPluginCommand_NoUpdateCenterDefined());
+                } else {
+                    Set<String> candidates = new HashSet<String>();
+                    for (UpdateSite s : h.getUpdateCenter().getSites()) {
+                        Data dt = s.getData();
+                        if (dt==null)
+                            stdout.println(Messages.InstallPluginCommand_NoUpdateDataRetrieved(s.getUrl()));
+                        candidates.addAll(dt.plugins.keySet());
+                    }
+                    stdout.println(Messages.InstallPluginCommand_DidYouMean(source,EditDistance.findNearest(source,candidates)));
+                }
+            }
+
             return 1;
         }
 

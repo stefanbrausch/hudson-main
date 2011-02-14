@@ -25,22 +25,26 @@ THE SOFTWARE.
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>org.jvnet.hudson.main</groupId>
+    <groupId>org.jenkins-ci.main</groupId>
     <artifactId>pom</artifactId>
+<<<<<<< HEAD
     <version>1.389-SNAPSHOT</version>
+=======
+    <version>1.397</version>
+>>>>>>> jenkins-1_397
     <relativePath>../pom.xml</relativePath>
   </parent>
   
-  <artifactId>hudson-war</artifactId>
+  <artifactId>jenkins-war</artifactId>
   <packaging>war</packaging>
-  <name>Hudson war</name>
+  <name>Jenkins war</name>
   <description>
     Creates a war file. Also includes additional static web resources, such as images, CSS, JavaScript, and
     some HTML files.
   </description>
   
   <build>
-    <finalName>hudson</finalName>
+    <finalName>jenkins</finalName>
     <plugins>
       <plugin>
         <artifactId>maven-war-plugin</artifactId>
@@ -60,6 +64,7 @@ THE SOFTWARE.
             <manifestEntries>
               <Implementation-Version>${project.version}</Implementation-Version>
               <Hudson-Version>${project.version}</Hudson-Version>
+              <Jenkins-Version>${project.version}</Jenkins-Version>
             </manifestEntries>
           </archive>
           <!--outputFileNameMapping>@{artifactId}@.@{extension}@</outputFileNameMapping-->
@@ -92,7 +97,7 @@ THE SOFTWARE.
             <configuration>
               <tasks>
                 <!-- deploy the war as a jar, so that the tests can pull this into the classpath -->
-                <attachArtifact file="target/hudson.war" classifier="war-for-test" type="jar" />
+                <attachArtifact file="target/jenkins.war" classifier="war-for-test" type="jar" />
               </tasks>
             </configuration>
           </execution>
@@ -108,7 +113,7 @@ THE SOFTWARE.
                 <mkdir dir="target/generated-resources" />
 
                 <!-- put executable war header -->
-                <resolveArtifact groupId="org.jvnet.hudson" artifactId="executable-war" version="1.17" type="jar" property="executable-war.jar" />
+                <resolveArtifact groupId="org.jenkins-ci" artifactId="executable-war" version="1.18" type="jar" property="executable-war.jar" />
                 <unjar src="${executable-war.jar}" dest="target/generated-resources">
                   <patternset>
                     <include name="**/*.class" />
@@ -118,9 +123,9 @@ THE SOFTWARE.
                 <!-- dependencies that goes to unusual locations -->
                 <resolveArtifact artifactId="remoting" tofile="${basedir}/target/generated-resources/WEB-INF/remoting.jar" />
                 <resolveArtifact artifactId="remoting" tofile="${basedir}/target/generated-resources/WEB-INF/slave.jar" />
-                <resolveArtifact groupId="${project.groupId}" artifactId="cli" classifier="jar-with-dependencies" version="${project.version}" type="jar" tofile="${basedir}/target/generated-resources/WEB-INF/hudson-cli.jar" />
+                <resolveArtifact groupId="${project.groupId}" artifactId="cli" classifier="jar-with-dependencies" version="${project.version}" type="jar" tofile="${basedir}/target/generated-resources/WEB-INF/jenkins-cli.jar" />
                 <resolveArtifact groupId="org.jvnet.hudson.winstone" artifactId="winstone" version="0.9.10-hudson-24" type="jar" tofile="${basedir}/target/generated-resources/winstone.jar" />
-
+                
                 <!-- bundled plugins -->
                 <resolveArtifact type="hpi" groupId="${project.groupId}" artifactId="maven-plugin" version="${project.version}" tofile="${basedir}/target/generated-resources/WEB-INF/plugins/maven-plugin.hpi" />
                 <resolveArtifact type="hpi" groupId="org.jvnet.hudson.plugins" artifactId="ssh-slaves" version="0.14" tofile="${basedir}/target/generated-resources/WEB-INF/plugins/ssh-slaves.hpi" />
@@ -135,7 +140,7 @@ THE SOFTWARE.
         <!-- this is really just a patched version of maven-jetty-plugin to workaround issue #932 -->
         <groupId>org.jvnet.hudson.tools</groupId>
         <artifactId>maven-hudson-dev-plugin</artifactId>
-        <version>6.1.7</version>
+        <version>6.1.7-hudson-1</version>
         <configuration>
           <contextPath>${contextPath}</contextPath>
           <connectors>
@@ -207,6 +212,11 @@ THE SOFTWARE.
               <name>hudson.Main.development</name>
               <value>true</value>
             </systemProperty>
+            <systemProperty>
+              <!-- this adds 3 sec to the shutdown, and most likely pointless, too -->
+              <name>hudson.DNSMultiCast.disabled</name>
+              <value>true</value>
+            </systemProperty>
           </systemProperties>
         </configuration>
       </plugin>
@@ -215,8 +225,8 @@ THE SOFTWARE.
 
   <dependencies>
     <dependency>
-      <groupId>org.jvnet.hudson.main</groupId>
-      <artifactId>hudson-core</artifactId>
+      <groupId>org.jenkins-ci.main</groupId>
+      <artifactId>jenkins-core</artifactId>
       <version>${project.version}</version>
       <exclusions>
         <!--
@@ -231,6 +241,26 @@ THE SOFTWARE.
           <artifactId>jsp-api</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <!-- declare this in reactors, so i can use now directly : mvn install -pl war -am to get the war  -->
+    <!-- TO REMOVE when maven-plugin won't be anymore a bundle plugin -->
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>maven-plugin</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>remoting</artifactId>
+      <version>${project.version}</version>
+    </dependency>    
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>cli</artifactId>
+      <classifier>jar-with-dependencies</classifier>
+      <version>${project.version}</version>
+      <scope>provided</scope>
     </dependency>
     <!-- offline profiler API when we need it -->
     <!--dependency>
@@ -250,7 +280,7 @@ THE SOFTWARE.
 
   <profiles>
     <profile>
-      <!-- profile for creating Hudson IPS package -->
+      <!-- profile for creating Jenkins IPS package -->
       <id>ips</id>
       <build>
         <plugins>
@@ -298,7 +328,7 @@ THE SOFTWARE.
 
                       For release, you should define the real values in ~/.m2/settings.xml
                     -->
-                    <signjar jar="target/hudson.war" alias="${hudson.sign.alias}" keystore="${hudson.sign.keystore}" storepass="${hudson.sign.storepass}" />
+                    <signjar jar="target/jenkins.war" alias="${hudson.sign.alias}" keystore="${hudson.sign.keystore}" storepass="${hudson.sign.storepass}" />
                   </tasks>
                 </configuration>
               </execution>

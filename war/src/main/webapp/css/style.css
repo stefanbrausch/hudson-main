@@ -143,6 +143,21 @@ a:visited {
   color: #5c3566;
 }
 
+a.lowkey:link {
+  text-decoration: none;
+  color: inherit;
+}
+
+a.lowkey:hover {
+  text-decoration: underline;
+  color: inherit;
+}
+
+a.lowkey:visited {
+  text-decoration: none;
+  color: inherit;
+}
+
 /* tip - anchors of class info */
 a.tip {
   position:relative;
@@ -481,6 +496,22 @@ div.behavior-loading {
     background-position: left center;
     background-repeat: no-repeat;
 }
+
+.icon16x16 {
+    width: 16px;
+    height: 16px;
+}
+
+.icon24x24 {
+    width: 24px;
+    height: 24px;
+}
+
+.icon32x32 {
+    width: 32px;
+    height: 32px;
+}
+
 /* ====================== help ===================================== */
 
 .help {

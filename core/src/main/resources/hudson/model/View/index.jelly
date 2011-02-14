@@ -25,9 +25,11 @@ THE SOFTWARE.
 <st:compress xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form" xmlns:i="jelly:fmt">
     <j:if test="${request.servletPath=='/' || request.servletPath==''}">
         <st:header name="X-Hudson" value="${servletContext.getAttribute('version')}" />
+        <st:header name="X-Jenkins" value="${servletContext.getAttribute('version')}" />
         <j:if test="${app.tcpSlaveAgentListener!=null}">
-      <!-- advertize the CLI TCP port -->
+            <!-- advertise the CLI TCP port -->
             <st:header name="X-Hudson-CLI-Port" value="${app.tcpSlaveAgentListener.port}" />
+            <st:header name="X-Jenkins-CLI-Port" value="${app.tcpSlaveAgentListener.port}" />
         </j:if>
     </j:if>
     <j:new var="h" className="hudson.Functions" /><!-- instead of JSP functions -->
@@ -41,10 +43,10 @@ THE SOFTWARE.
             <st:include page="main.jelly" />
         </l:main-panel>
         <l:header>
-      <!-- for screen resolution detection -->
+            <!-- for screen resolution detection -->
             <l:yui module="cookie" suffix="-beta" />
             <script>
-        YAHOO.util.Cookie.set("screenResolution", screen.width+"x"+screen.height); 
+              YAHOO.util.Cookie.set("screenResolution", screen.width+"x"+screen.height);
             </script>
         </l:header>
     </l:layout>

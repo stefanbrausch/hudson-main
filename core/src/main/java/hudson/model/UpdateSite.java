@@ -34,6 +34,7 @@ import hudson.util.TextFile;
 import hudson.util.VersionNumber;
 import static hudson.util.TimeUnit2.DAYS;
 import net.sf.json.JSONObject;
+import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
@@ -70,10 +71,10 @@ import javax.servlet.ServletContext;
 
 
 /**
- * Source of the update center information, like "http://hudson-ci.org/update-center.json"
+ * Source of the update center information, like "http://jenkins-ci.org/update-center.json"
  *
  * <p>
- * Hudson can have multiple {@link UpdateSite}s registered in the system, so that it can pick up plugins
+ * Jenkins can have multiple {@link UpdateSite}s registered in the system, so that it can pick up plugins
  * from different locations.
  *
  * @author Andrew Bayer
@@ -102,7 +103,7 @@ public class UpdateSite {
     private final String id;
 
     /**
-     * Path to <tt>update-center.json</tt>, like <tt>http://hudson-ci.org/update-center.json</tt>.
+     * Path to <tt>update-center.json</tt>, like <tt>http://jenkins-ci.org/update-center.json</tt>.
      */
     private final String url;
 
@@ -172,7 +173,7 @@ public class UpdateSite {
                 certs.add(c);
             }
 
-            // all default root CAs in JVM are trusted, plus certs bundled in Hudson
+            // all default root CAs in JVM are trusted, plus certs bundled in Jenkins
             Set<TrustAnchor> anchors = CertificateUtil.getDefaultRootCAs();
             ServletContext context = Hudson.getInstance().servletContext;
             for (String cert : (Set<String>) context.getResourcePaths("/WEB-INF/update-center-rootCAs")) {
@@ -319,7 +320,7 @@ public class UpdateSite {
         for (PluginWrapper pw : Hudson.getInstance().getPluginManager().getPlugins()) {
             if(!pw.isBundled() && pw.getUpdateInfo()!=null)
                 // do not advertize updates to bundled plugins, since we generally want users to get them
-                // as a part of hudson.war updates. This also avoids unnecessary pinning of plugins. 
+                // as a part of jenkins.war updates. This also avoids unnecessary pinning of plugins. 
                 return true;
         }
         return false;
@@ -338,7 +339,7 @@ public class UpdateSite {
      * Is this the legacy default update center site?
      */
     public boolean isLegacyDefault() {
-        return id.equals("default") && url.startsWith("http://hudson-ci.org/");
+        return id.equals("default") && url.startsWith("http://hudson-ci.org/") || url.startsWith("http://updates.hudson-labs.org/");
     }
 
     /**
@@ -351,7 +352,7 @@ public class UpdateSite {
         public final String sourceId;
 
         /**
-         * The latest hudson.war.
+         * The latest jenkins.war.
          */
         public final Entry core;
         /**
@@ -360,7 +361,7 @@ public class UpdateSite {
         public final Map<String,Plugin> plugins = new TreeMap<String,Plugin>(String.CASE_INSENSITIVE_ORDER);
 
         /**
-         * If this is non-null, Hudson is going to check the connectivity to this URL to make sure
+         * If this is non-null, Jenkins is going to check the connectivity to this URL to make sure
          * the network connection is up. Null to skip the check.
          */
         public final String connectionCheckUrl;
@@ -463,7 +464,7 @@ public class UpdateSite {
          */
         public final String compatibleSinceVersion;
         /**
-         * Version of Hudson core this plugin was compiled against.
+         * Version of Jenkins core this plugin was compiled against.
          */
         public final String requiredCore;
         /**
@@ -548,7 +549,7 @@ public class UpdateSite {
             List<Plugin> deps = new ArrayList<Plugin>();
 
             for(Map.Entry<String,String> e : dependencies.entrySet()) {
-                Plugin depPlugin = getPlugin(e.getKey());
+                Plugin depPlugin = Hudson.getInstance().getUpdateCenter().getPlugin(e.getKey());
                 VersionNumber requiredVersion = new VersionNumber(e.getValue());
                 
                 // Is the plugin installed already? If not, add it.

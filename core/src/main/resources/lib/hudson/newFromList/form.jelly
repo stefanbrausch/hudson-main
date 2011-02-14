@@ -1,7 +1,7 @@
 <!--
 The MIT License
 
-Copyright (c) 2004-2009, Sun Microsystems, Inc., Kohsuke Kawaguchi, Yahoo! Inc.
+Copyright (c) 2004-2009, Sun Microsystems, Inc., Kohsuke Kawaguchi, Yahoo! Inc., CloudBees, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -33,9 +33,11 @@ THE SOFTWARE.
     @checkUrl    : form field validation url
 -->
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:s="/lib/form">
+  <j:set var="descriptors" value="${h.filterDescriptors(it,attrs.descriptors)}" />
+
   <s:form method="post" action="createItem">
-    <s:entry title="${nameTitle}">
-      <s:textbox id="name" name="name" checkUrl="'${rootURL}/${checkUrl}?value='+encodeURIComponent(this.value)"
+    <s:entry title="${attrs.nameTitle}">
+      <s:textbox id="name" name="name" checkUrl="'${rootURL}/${attrs.checkUrl}?value='+encodeURIComponent(this.value)"
                  onchange="updateOk(this.form)" onkeyup="updateOk(this.form)" />
       <script>$('name').focus();</script>
     </s:entry>
@@ -48,18 +50,18 @@ THE SOFTWARE.
       </s:block>
       <s:entry>
         <st:set var="instance" value="${descriptor}" />
-        <st:include page="newJobDetail.jelly" class="${descriptor.clazz}" optional="true"/>
+        <st:include page="newInstanceDetail.jelly" it="${descriptor}" />
       </s:entry>
     </j:forEach>
-    <j:if test="${!empty(copyNames)}">
+    <j:if test="${!empty(attrs.copyNames)}">
       <s:block>
         <input type="radio" name="mode" value="copy" onchange="updateOk(this.form)" onclick="updateOk(this.form)" />
         <st:nbsp/>
-        <label class="attach-previous"><b>${copyTitle}</b></label>
+        <label class="attach-previous"><b>${attrs.copyTitle}</b></label>
       </s:block>
       <s:entry>
         ${%Copy from}
-        <s:editableComboBox id="from" name="from" items="${copyNames}" />
+        <s:editableComboBox id="from" name="from" items="${attrs.copyNames}" />
       </s:entry>
     </j:if>
 

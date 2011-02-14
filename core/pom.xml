@@ -26,17 +26,21 @@ THE SOFTWARE.
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>org.jvnet.hudson.main</groupId>
+    <groupId>org.jenkins-ci.main</groupId>
     <artifactId>pom</artifactId>
+<<<<<<< HEAD
     <version>1.389-SNAPSHOT</version>
+=======
+    <version>1.397</version>
+>>>>>>> jenkins-1_397
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>hudson-core</artifactId>
+  <artifactId>jenkins-core</artifactId>
   <packaging>stapler-jar</packaging>
-  <name>Hudson core</name>
+  <name>Jenkins core</name>
   <description>
-    Contains the core Hudson code and view files to render HTML.
+    Contains the core Jenkins code and view files to render HTML.
   </description>
   
   <properties>
@@ -61,7 +65,7 @@ THE SOFTWARE.
       <plugin>
         <groupId>com.infradna.tool</groupId>
         <artifactId>bridge-method-injector</artifactId>
-        <version>1.3</version>
+        <version>1.4</version>
         <executions>
           <execution>
             <goals>
@@ -170,7 +174,7 @@ THE SOFTWARE.
 
                 <!-- download winsw.exe -->
                 <mkdir dir="target/classes/windows-service" />
-                <resolveArtifact artifactId="winsw" tofile="target/classes/windows-service/hudson.exe" />
+                <resolveArtifact artifactId="winsw" tofile="target/classes/windows-service/jenkins.exe" />
               </tasks>
             </configuration>
             <goals>
@@ -382,7 +386,7 @@ THE SOFTWARE.
     <dependency>
       <groupId>org.kohsuke.stapler</groupId>
       <artifactId>stapler-jelly</artifactId>
-      <version>1.154</version>
+      <version>1.155</version>
       <exclusions>
         <exclusion>
           <groupId>commons-jelly</groupId>
@@ -399,7 +403,7 @@ THE SOFTWARE.
       <artifactId>stapler-adjunct-timeline</artifactId>
       <version>1.2</version>
     </dependency>
-    <dependency><!-- this helps us see the source code of the control while we edit Hudson. -->
+    <dependency><!-- this helps us see the source code of the control while we edit Jenkins. -->
       <groupId>org.kohsuke.stapler</groupId>
       <artifactId>stapler-adjunct-timeline</artifactId>
       <version>1.0</version>
@@ -410,7 +414,7 @@ THE SOFTWARE.
     <dependency>
       <groupId>com.infradna.tool</groupId>
       <artifactId>bridge-method-annotation</artifactId>
-      <version>1.2</version>
+      <version>1.4</version>
     </dependency>
 
     <dependency><!-- until we get this version through Stapler -->
@@ -461,7 +465,6 @@ THE SOFTWARE.
     <dependency>
       <groupId>org.apache.ant</groupId>
       <artifactId>ant</artifactId>
-      <version>1.8.0</version>
     </dependency>
     <dependency>
       <groupId>javax.servlet</groupId>
@@ -472,7 +475,6 @@ THE SOFTWARE.
     <dependency>
       <groupId>commons-io</groupId>
       <artifactId>commons-io</artifactId>
-      <version>1.4</version>
     </dependency>
     <dependency><!-- hudson doesn't use this directly, but some plugins wanted to use the latest -->
       <groupId>commons-lang</groupId>
@@ -636,7 +638,7 @@ THE SOFTWARE.
       <artifactId>spring-core</artifactId>
       <version>2.5</version>
     </dependency>
-    <dependency><!-- Hudson core doesn't use it but HUDSON-3811 requires us to put it. -->
+    <dependency><!-- Jenkins core doesn't use it but HUDSON-3811 requires us to put it. -->
       <groupId>org.springframework</groupId>
       <artifactId>spring-aop</artifactId>
       <version>2.5</version>
@@ -650,6 +652,7 @@ THE SOFTWARE.
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.3.1</version>
+      <scope>test</scope>
     </dependency>
     <dependency><!-- needed by Jelly -->
       <groupId>javax.servlet</groupId>
@@ -732,12 +735,12 @@ THE SOFTWARE.
     <dependency>
       <groupId>org.jvnet.hudson</groupId>
       <artifactId>jmdns</artifactId>
-      <version>3.1.6-hudson-2</version>
+      <version>3.2.1-hudson-1</version>
     </dependency>
     <dependency>
       <groupId>com.sun.winsw</groupId>
       <artifactId>winsw</artifactId>
-      <version>1.9</version>
+      <version>1.10</version>
       <classifier>bin</classifier>
       <type>exe</type>
       <scope>provided</scope><!-- this isn't really a dependency that Maven should care about, so putting 'provided' -->
@@ -750,7 +753,7 @@ THE SOFTWARE.
     <dependency>
       <groupId>com.sun.akuma</groupId>
       <artifactId>akuma</artifactId>
-      <version>1.2</version>
+      <version>1.4</version>
     </dependency>
     <dependency>
       <groupId>org.jvnet.libpam4j</groupId>
@@ -794,7 +797,7 @@ THE SOFTWARE.
       <version>1.1</version>
     </dependency>
 
-    <dependency><!-- Hudson doesn't depend on it but some plugin wants the latest version. Bundling 1.4 until we figure out a mechanism to let plugins load its own -->
+    <dependency><!-- Jenkins doesn't depend on it but some plugin wants the latest version. Bundling 1.4 until we figure out a mechanism to let plugins load its own -->
       <groupId>commons-codec</groupId>
       <artifactId>commons-codec</artifactId>
       <version>1.4</version>

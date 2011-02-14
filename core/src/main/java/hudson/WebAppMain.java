@@ -25,6 +25,7 @@ package hudson;
 
 import com.thoughtworks.xstream.converters.reflection.PureJavaReflectionProvider;
 import com.thoughtworks.xstream.core.JVM;
+import com.sun.jna.Native;
 import hudson.model.Hudson;
 import hudson.model.User;
 import hudson.triggers.SafeTimerTask;
@@ -40,6 +41,7 @@ import hudson.util.IncompatibleAntVersionDetected;
 import hudson.util.HudsonFailedToLoad;
 import hudson.util.ChartUtil;
 import hudson.util.AWTProblem;
+import hudson.util.JNADoublyLoaded;
 import org.jvnet.localizer.LocaleProvider;
 import org.kohsuke.stapler.Stapler;
 import org.kohsuke.stapler.StaplerRequest;
@@ -103,7 +105,7 @@ public final class WebAppMain implements ServletContextListener {
                 return;
             }
 
-            try {// remove Sun PKCS11 provider if present. See http://hudson.gotdns.com/wiki/display/HUDSON/Solaris+Issue+6276483
+            try {// remove Sun PKCS11 provider if present. See http://wiki.jenkins-ci.org/display/JENKINS/Solaris+Issue+6276483
                 Security.removeProvider("SunPKCS11-Solaris");
             } catch (SecurityException e) {
                 // ignore this error.
@@ -111,9 +113,10 @@ public final class WebAppMain implements ServletContextListener {
 
             installLogger();
 
-            final File home = getHomeDir(event).getAbsoluteFile();
+            final FileAndDescription describedHomeDir = getHomeDir(event);
+            final File home = describedHomeDir.file.getAbsoluteFile();
             home.mkdirs();
-            System.out.println("hudson home directory: "+home);
+            System.out.println("hudson home directory: "+home+" found at: "+describedHomeDir.description);
 
             // check that home exists (as mkdirs could have failed silently), otherwise throw a meaningful error
             if (! home.exists()) {
@@ -132,7 +135,7 @@ public final class WebAppMain implements ServletContextListener {
 //            // make sure JNA works. this can fail if
 //            //    - platform is unsupported
 //            //    - JNA is already loaded in another classloader
-//            // see http://wiki.hudson-ci.org/display/HUDSON/JNA+is+already+loaded
+//            // see http://wiki.jenkins-ci.org/display/JENKINS/JNA+is+already+loaded
 //            // TODO: or shall we instead modify Hudson to work gracefully without JNA?
 //            try {
 //                /*
@@ -258,37 +261,60 @@ public final class WebAppMain implements ServletContextListener {
         Logger.getLogger("hudson").addHandler(handler);
     }
 
+    /** Add some metadata to a File, allowing to trace setup issues */
+    private static class FileAndDescription {
+        File file;
+        String description;
+        public FileAndDescription(File file,String description) {
+            this.file = file;
+            this.description = description;
+        }
+    }
+
     /**
-     * Determines the home directory for Hudson.
+     * Determines the home directory for Jenkins.
      *
+     * <p>
+     * We look for a setting that affects the smallest scope first, then bigger ones later.
+     *
+     * <p>
      * People makes configuration mistakes, so we are trying to be nice
      * with those by doing {@link String#trim()}.
+     * 
+     * <p>
+     * @return the File alongside with some description to help the user troubleshoot issues
      */
-    private File getHomeDir(ServletContextEvent event) {
+    private FileAndDescription getHomeDir(ServletContextEvent event) {
         // check JNDI for the home directory first
-        try {
-            InitialContext iniCtxt = new InitialContext();
-            Context env = (Context) iniCtxt.lookup("java:comp/env");
-            String value = (String) env.lookup("HUDSON_HOME");
-            if(value!=null && value.trim().length()>0)
-                return new File(value.trim());
-            // look at one more place. See issue #1314 
-            value = (String) iniCtxt.lookup("HUDSON_HOME");
-            if(value!=null && value.trim().length()>0)
-                return new File(value.trim());
-        } catch (NamingException e) {
-            // ignore
+        for (String name : HOME_NAMES) {
+            try {
+                InitialContext iniCtxt = new InitialContext();
+                Context env = (Context) iniCtxt.lookup("java:comp/env");
+                String value = (String) env.lookup(name);
+                if(value!=null && value.trim().length()>0)
+                    return new FileAndDescription(new File(value.trim()),"JNDI/java:comp/env/"+name);
+                // look at one more place. See issue #1314
+                value = (String) iniCtxt.lookup(name);
+                if(value!=null && value.trim().length()>0)
+                    return new FileAndDescription(new File(value.trim()),"JNDI/"+name);
+            } catch (NamingException e) {
+                // ignore
+            }
         }
 
-        // finally check the system property
-        String sysProp = System.getProperty("HUDSON_HOME");
-        if(sysProp!=null)
-            return new File(sysProp.trim());
-        
+        // next the system property
+        for (String name : HOME_NAMES) {
+            String sysProp = System.getProperty(name);
+            if(sysProp!=null)
+                return new FileAndDescription(new File(sysProp.trim()),"System.getProperty(\""+name+"\")");
+        }
+
         // look at the env var next
-        String env = EnvVars.masterEnvVars.get("HUDSON_HOME");
-        if(env!=null)
-            return new File(env.trim()).getAbsoluteFile();
+        for (String name : HOME_NAMES) {
+            String env = EnvVars.masterEnvVars.get(name);
+            if(env!=null)
+                return new FileAndDescription(new File(env.trim()).getAbsoluteFile(),"EnvVars.masterEnvVars.get(\""+name+"\")");
+        }
 
         // otherwise pick a place by ourselves
 
@@ -299,11 +325,16 @@ public final class WebAppMain implements ServletContextListener {
                 // Hudson <1.42 used to prefer this before ~/.hudson, so
                 // check the existence and if it's there, use it.
                 // otherwise if this is a new installation, prefer ~/.hudson
-                return ws;
+                return new FileAndDescription(ws,"getServletContext().getRealPath(\"/WEB-INF/workspace\")");
         }
 
-        // if for some reason we can't put it within the webapp, use home directory.
-        return new File(new File(System.getProperty("user.home")),".hudson");
+        File legacyHome = new File(new File(System.getProperty("user.home")),".hudson");
+        if (legacyHome.exists()) {
+            return new FileAndDescription(legacyHome,"$user.home/.hudson"); // before rename, this is where it was stored
+        }
+
+        File newHome = new File(new File(System.getProperty("user.home")),".jenkins");
+        return new FileAndDescription(newHome,"$user.home/.jenkins");
     }
 
     public void contextDestroyed(ServletContextEvent event) {
@@ -318,4 +349,6 @@ public final class WebAppMain implements ServletContextListener {
 
     private static final Logger LOGGER = Logger.getLogger(WebAppMain.class.getName());
 
+
+    private static final String[] HOME_NAMES = {"JENKINS_HOME","HUDSON_HOME"};
 }

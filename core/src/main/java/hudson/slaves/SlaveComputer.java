@@ -42,8 +42,6 @@ import hudson.slaves.OfflineCause.ChannelTermination;
 
 import java.io.File;
 import java.io.OutputStream;
-import java.io.FileOutputStream;
-import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -58,7 +56,7 @@ import java.nio.charset.Charset;
 import java.util.concurrent.Future;
 import java.security.Security;
 
-import org.apache.commons.io.IOUtils;
+import hudson.util.io.ReopenableFileOutputStream;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.QueryParameter;
@@ -89,6 +87,17 @@ public class SlaveComputer extends Computer {
     private ComputerLauncher launcher;
 
     /**
+     * Perpetually writable log file.
+     */
+    private final ReopenableFileOutputStream log;
+
+    /**
+     * {@link StreamTaskListener} that wraps {@link #log}, hence perpetually writable.
+     */
+    private final TaskListener taskListener;
+
+
+    /**
      * Number of failed attempts to reconnect to this node
      * (so that if we keep failing to reconnect, we can stop
      * trying.)
@@ -105,6 +114,8 @@ public class SlaveComputer extends Computer {
 
     public SlaveComputer(Slave slave) {
         super(slave);
+        this.log = new ReopenableFileOutputStream(getLogFile());
+        this.taskListener = new StreamTaskListener(log);
     }
 
     /**
@@ -177,25 +188,23 @@ public class SlaveComputer extends Computer {
             public Object call() throws Exception {
                 // do this on another thread so that the lengthy launch operation
                 // (which is typical) won't block UI thread.
-                OutputStream out = openLogFile();
                 try {
-                    TaskListener listener = new StreamTaskListener(out);
+                    log.rewind();
                     try {
-                        launcher.launch(SlaveComputer.this, listener);
+                        launcher.launch(SlaveComputer.this, taskListener);
                         return null;
                     } catch (AbortException e) {
-                        listener.error(e.getMessage());
+                        taskListener.error(e.getMessage());
                         throw e;
                     } catch (IOException e) {
-                        Util.displayIOException(e,listener);
-                        e.printStackTrace(listener.error(Messages.ComputerLauncher_unexpectedError()));
+                        Util.displayIOException(e,taskListener);
+                        e.printStackTrace(taskListener.error(Messages.ComputerLauncher_unexpectedError()));
                         throw e;
                     } catch (InterruptedException e) {
-                        e.printStackTrace(listener.error(Messages.ComputerLauncher_abortedLaunch()));
+                        e.printStackTrace(taskListener.error(Messages.ComputerLauncher_abortedLaunch()));
                         throw e;
                     }
                 } finally {
-                    IOUtils.closeQuietly(out);
                     if (channel==null)
                         offlineCause = new OfflineCause.LaunchFailed();
                 }
@@ -254,14 +263,13 @@ public class SlaveComputer extends Computer {
     }
 
     public OutputStream openLogFile() {
-        OutputStream os;
         try {
-            os = new FileOutputStream(getLogFile());
-        } catch (FileNotFoundException e) {
+            log.rewind();
+            return log;
+        } catch (IOException e) {
             logger.log(Level.SEVERE, "Failed to create log file "+getLogFile(),e);
-            os = new NullStream();
+            return new NullStream();
         }
-        return os;
     }
 
     private final Object channelLock = new Object();
@@ -286,6 +294,8 @@ public class SlaveComputer extends Computer {
      *      be useful for debugging/trouble-shooting.
      * @param listener
      *      Gets a notification when the channel closes, to perform clean up. Can be null.
+     *      By the time this method is called, the cause of the termination is reported to the user,
+     *      so the implementation of the listener doesn't need to do that again.
      */
     public void setChannel(InputStream in, OutputStream out, OutputStream launchLog, Channel.Listener listener) throws IOException, InterruptedException {
         if(this.channel!=null)
@@ -301,7 +311,12 @@ public class SlaveComputer extends Computer {
             public void onClosed(Channel c, IOException cause) {
                 SlaveComputer.this.channel = null;
                 // Orderly shutdown will have null exception
-                if (cause!=null) offlineCause = new ChannelTermination(cause);
+                if (cause!=null) {
+                    offlineCause = new ChannelTermination(cause);
+                     cause.printStackTrace(taskListener.error("Connection terminated"));
+                } else {
+                    taskListener.getLogger().println("Connection terminated");
+                }
                 launcher.afterDisconnect(SlaveComputer.this, taskListener);
             }
         });
@@ -352,7 +367,7 @@ public class SlaveComputer extends Computer {
     }
 
     @Override
-    public VirtualChannel getChannel() {
+    public Channel getChannel() {
         return channel;
     }
 
@@ -391,15 +406,9 @@ public class SlaveComputer extends Computer {
             public void run() {
                 // do this on another thread so that any lengthy disconnect operation
                 // (which could be typical) won't block UI thread.
-                OutputStream out = openLogFile();
-                try {
-                    TaskListener listener = new StreamTaskListener(out);
-                    launcher.beforeDisconnect(SlaveComputer.this, listener);
-                    closeChannel();
-                    launcher.afterDisconnect(SlaveComputer.this, listener);
-                } finally {
-                    IOUtils.closeQuietly(out);
-                }
+                launcher.beforeDisconnect(SlaveComputer.this, taskListener);
+                closeChannel();
+                launcher.afterDisconnect(SlaveComputer.this, taskListener);
             }
         });
     }
@@ -445,7 +454,7 @@ public class SlaveComputer extends Computer {
 
     public RetentionStrategy getRetentionStrategy() {
         Slave n = getNode();
-        return n==null ? null : n.getRetentionStrategy();
+        return n==null ? RetentionStrategy.INSTANCE : n.getRetentionStrategy();
     }
 
     /**
@@ -542,7 +551,7 @@ public class SlaveComputer extends Computer {
             }
             logger.addHandler(SLAVE_LOG_HANDLER);
 
-            // remove Sun PKCS11 provider if present. See http://hudson.gotdns.com/wiki/display/HUDSON/Solaris+Issue+6276483
+            // remove Sun PKCS11 provider if present. See http://wiki.jenkins-ci.org/display/JENKINS/Solaris+Issue+6276483
             try {
                 Security.removeProvider("SunPKCS11-Solaris");
             } catch (SecurityException e) {

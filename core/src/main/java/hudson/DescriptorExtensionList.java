@@ -38,6 +38,7 @@ import hudson.tasks.Publisher.DescriptorExtensionListImpl;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.lang.reflect.Type;
@@ -124,13 +125,13 @@ public class DescriptorExtensionList<T extends Describable<T>, D extends Descrip
     }
 
     /**
-     * Finds a descriptor by their {@link Descriptor#clazz}.
+     * Finds a descriptor by their {@link Descriptor#getId()}.
      *
      * If none is found, null is returned.
      */
-    public Descriptor<T> findByName(String fullyQualifiedClassName) {
+    public Descriptor<T> findByName(String id) {
         for (Descriptor<T> d : this)
-            if(d.clazz.getName().equals(fullyQualifiedClassName))
+            if(d.getId().equals(id))
                 return d;
         return null;
     }
@@ -156,13 +157,12 @@ public class DescriptorExtensionList<T extends Describable<T>, D extends Descrip
         List<ExtensionComponent<D>> r = new ArrayList<ExtensionComponent<D>>();
         for( ExtensionComponent<Descriptor> c : hudson.getExtensionList(Descriptor.class).getComponents() ) {
             Descriptor d = c.getInstance();
-            Type subTyping = Types.getBaseClass(d.getClass(), Descriptor.class);
-            if (!(subTyping instanceof ParameterizedType)) {
-                LOGGER.severe(d.getClass()+" doesn't extend Descriptor with a type parameter");
-                continue;   // skip this one
+            try {
+                if(d.getT()==describableType)
+                    r.add((ExtensionComponent)c);
+            } catch (IllegalStateException e) {
+                LOGGER.log(Level.SEVERE, d.getClass() + " doesn't extend Descriptor with a type parameter", e); // skip this one
             }
-            if(Types.erasure(Types.getTypeArgument(subTyping,0))==(Class)describableType)
-                r.add((ExtensionComponent)c);
         }
         return r;
     }

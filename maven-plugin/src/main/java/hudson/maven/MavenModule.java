@@ -88,6 +88,9 @@ public final class MavenModule extends AbstractMavenProject<MavenModule,MavenBui
 
     private transient ModuleName moduleName;
 
+    /**
+     * @see documentation in {@link PomInfo#relativePath}
+     */
     private String relativePath;
 
     /**
@@ -481,6 +484,14 @@ public final class MavenModule extends AbstractMavenProject<MavenModule,MavenBui
 
         return reporterList;
     }
+    
+    /**
+     * for debug purpose
+     */
+    public String toString() {
+        return super.toString()+'['+getFullName()+']'+"[relativePath:"+getRelativePath()+']';
+    }
 
     private static final Logger LOGGER = Logger.getLogger(MavenModule.class.getName());
+    
 }

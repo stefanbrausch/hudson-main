@@ -2,7 +2,7 @@
  * The MIT License
  * 
  * Copyright (c) 2004-2010, Sun Microsystems, Inc., Kohsuke Kawaguchi,
- * Red Hat, Inc., Seiji Sogabe, Stephen Connolly, Thomas J. Black, Tom Huybrechts
+ * Red Hat, Inc., Seiji Sogabe, Stephen Connolly, Thomas J. Black, Tom Huybrechts, CloudBees, Inc.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,6 +48,7 @@ import hudson.tasks.Publisher;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.ExceptionCatchingThreadFactory;
 import hudson.util.RemotingDiagnostics;
+import hudson.util.RemotingDiagnostics.HeapDump;
 import hudson.util.RunList;
 import hudson.util.Futures;
 import org.kohsuke.stapler.StaplerRequest;
@@ -65,11 +66,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Enumeration;
+import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -505,15 +502,16 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
     public void setTemporarilyOffline(boolean temporarilyOffline, OfflineCause cause) {
         offlineCause = temporarilyOffline ? cause : null;
         this.temporarilyOffline = temporarilyOffline;
+        getNode().setTemporaryOfflineCause(offlineCause);
         Hudson.getInstance().getQueue().scheduleMaintenance();
     }
 
     @Exported
     public String getIcon() {
         if(isOffline())
-            return "computer-x.gif";
+            return "computer-x.png";
         else
-            return "computer.gif";
+            return "computer.png";
     }
 
     public String getIconAltText() {
@@ -559,6 +557,16 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
             this.nodeName = null;
 
         setNumExecutors(node.getNumExecutors());
+        if (this.temporarilyOffline) {
+            // When we get a new node, push our current temp offline
+            // status to it (as the status is not carried across
+            // configuration changes that recreate the node).
+            // Since this is also called the very first time this
+            // Computer is created, avoid pushing an empty status
+            // as that could overwrite any status that the Node
+            // brought along from its persisted config data.
+            node.setTemporaryOfflineCause(this.offlineCause);
+        }
     }
 
     /**
@@ -581,11 +589,22 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
                     e.interrupt();
         } else {
             // if the number is increased, add new ones
-            while(executors.size()<numExecutors) {
-                Executor e = new Executor(this, executors.size());
-                e.start();
-                executors.add(e);
-            }
+            addNewExecutorIfNecessary();
+        }
+    }
+
+    private void addNewExecutorIfNecessary() {
+        Set<Integer> availableNumbers  = new HashSet<Integer>();
+        for (int i = 0; i < numExecutors; i++)
+            availableNumbers.add(i);
+
+        for (Executor executor : executors)
+            availableNumbers.remove(executor.getNumber());
+
+        for (Integer number : availableNumbers) {
+            Executor e = new Executor(this, number);
+            e.start();
+            executors.add(e);
         }
     }
 
@@ -685,8 +704,22 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
      */
     /*package*/ synchronized void removeExecutor(Executor e) {
         executors.remove(e);
-        if(executors.isEmpty())
+        addNewExecutorIfNecessary();
+        if(!isAlive())
             Hudson.getInstance().removeComputer(this);
+    }
+
+    /**
+     * Returns true if any of the executors are functioning.
+     *
+     * Note that if an executor dies, we'll leave it in {@link #executors} until
+     * the administrator yanks it out, so that we can see why it died.
+     */
+    private boolean isAlive() {
+        for (Executor e : executors)
+            if (e.isAlive())
+                return true;
+        return false;
     }
 
     /**
@@ -753,6 +786,13 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
      */
     public Map<String,String> getThreadDump() throws IOException, InterruptedException {
         return RemotingDiagnostics.getThreadDump(getChannel());
+    }
+
+    /**
+     * Obtains the heap dump.
+     */
+    public HeapDump getHeapDump() throws IOException {
+        return new HeapDump(this,getChannel());
     }
 
     /**
@@ -906,7 +946,6 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
         checkPermission(Hudson.ADMINISTER);
 
         rsp.setContentType("text/plain");
-        rsp.setCharacterEncoding("UTF-8");
         PrintWriter w = new PrintWriter(rsp.getCompressedWriter(req));
         VirtualChannel vc = getChannel();
         if (vc instanceof Channel) {
@@ -970,7 +1009,6 @@ public /*transient*/ abstract class Computer extends Actionable implements Acces
      */
     public void doConfigSubmit( StaplerRequest req, StaplerResponse rsp ) throws IOException, ServletException, FormException {
         checkPermission(CONFIGURE);
-        req.setCharacterEncoding("UTF-8");
         
         final Hudson app = Hudson.getInstance();
 

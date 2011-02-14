@@ -30,7 +30,10 @@ import hudson.model.Descriptor.FormException;
 import hudson.util.CaseInsensitiveComparator;
 import hudson.util.DescribableList;
 import hudson.util.FormValidation;
+import hudson.views.LastDurationColumn;
 import hudson.views.ListViewColumn;
+import hudson.views.StatusColumn;
+import hudson.views.WeatherColumn;
 import hudson.views.ViewJobFilter;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
@@ -40,6 +43,7 @@ import org.kohsuke.stapler.StaplerResponse;
 import javax.servlet.ServletException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.SortedSet;
@@ -276,19 +280,8 @@ public class ListView extends View implements Saveable {
      * @deprecated as of 1.391
      *  Use {@link ListViewColumn#createDefaultInitialColumnList()}
      */
-<<<<<<< HEAD
-    private static final List<Class<? extends ListViewColumn>> DEFAULT_COLUMNS =  Arrays.asList(
-        StatusColumn.class,
-        WeatherColumn.class,
-        BuildButtonColumn.class,
-        JobColumn.class,
-        LastSuccessColumn.class,
-        LastFailureColumn.class,
-        LastDurationColumn.class
-    );
-=======
     public static List<ListViewColumn> getDefaultColumns() {
         return ListViewColumn.createDefaultInitialColumnList();
     }
->>>>>>> jenkins-1_397
+
 }

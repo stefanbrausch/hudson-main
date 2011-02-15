@@ -31,11 +31,8 @@ THE SOFTWARE.
   <tr class="build-row no-wrap ${transitive}">
     <td>
       <img width="16" height="16" src="${imagesURL}/16x16/${build.buildStatusUrl}" alt="${build.iconColor.description}" tooltip="${build.iconColor.description}" /><st:nbsp/>
-<<<<<<< HEAD
       <a href="${link}console"> #${build.number}</a>
-=======
       ${build.displayName}
->>>>>>> jenkins-1_397
     </td>
     <td style="padding-right:0">
       <a class="tip" href="${link}">

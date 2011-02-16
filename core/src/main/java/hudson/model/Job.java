@@ -30,6 +30,7 @@ import com.infradna.tool.bridge_method_injector.WithBridgeMethods;
 import hudson.ExtensionPoint;
 import hudson.PermalinkList;
 import hudson.Extension;
+import hudson.XmlFile;
 import hudson.cli.declarative.CLIResolver;
 import hudson.model.Descriptor.FormException;
 import hudson.model.listeners.ItemListener;
@@ -43,6 +44,7 @@ import hudson.search.SearchItem;
 import hudson.search.SearchItems;
 import hudson.security.ACL;
 import hudson.tasks.LogRotator;
+import hudson.util.AtomicFileWriter;
 import hudson.util.ChartUtil;
 import hudson.util.ColorPalette;
 import hudson.util.CopyOnWriteList;
@@ -75,6 +77,11 @@ import java.util.SortedMap;
 import java.util.LinkedList;
 
 import javax.servlet.ServletException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
 
 import net.sf.json.JSONObject;
 import net.sf.json.JSONException;
@@ -96,6 +103,7 @@ import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.stapler.WebMethod; 
 
 /**
  * A job is an runnable entity under the monitoring of Hudson.
@@ -987,7 +995,7 @@ public abstract class Job<JobT extends Job<JobT, RunT>, RunT extends Run<JobT, R
     }
 
     /**
-<<<<<<< HEAD
+
      * Accepts <tt>config.xml</tt> submission, as well as serve it.
      */
     @WebMethod(name = "config.xml")
@@ -1038,8 +1046,7 @@ public abstract class Job<JobT extends Job<JobT, RunT>, RunT extends Run<JobT, R
     }
 
     /**
-=======
->>>>>>> jenkins-1_397
+
      * Derived class can override this to perform additional config submission
      * work.
      */
